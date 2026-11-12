@@ -241,8 +241,16 @@ def create_app(agent=None) -> FastAPI:
     async def account(request: Request):
         return page(
             request, "account.html", status=agent.status, step=agent.login_step,
-            error=request.session.pop("warning", ""), problems=request.session.pop("problems", []),
+            error=request.session.pop("warning", "") or agent.login_error,
+            problems=request.session.pop("problems", []), hint=agent.login_hint, qr_svg=agent.qr_svg(),
         )
+
+    @app.post("/account/qr")
+    async def account_qr(request: Request):
+        error = await agent.begin_qr()
+        if error:
+            request.session["warning"] = error
+        return _go("/account")
 
     @app.post("/account/phone")
     async def account_phone(request: Request, phone: str = Form("")):

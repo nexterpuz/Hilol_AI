@@ -27,13 +27,28 @@
 <div class="row"><input id="phone" name="phone" type="text" inputmode="tel" required placeholder="+998 90 123 45 67" style="flex:1 1 220px">
 <button class="btn primary" type="submit">Kod yuborish</button></div>
 </form>
+<div class="muted">Kod kelmasa yoki tezroq bo'lsin desangiz, QR orqali kiring: kod kerak bo'lmaydi.</div>
+<form method="post" action="/account/qr"><button class="btn" type="submit">QR kod orqali kirish</button></form>
 {% elif step == "code" %}
-<div class="muted">Kod Telegram ilovasidagi "Telegram" rasmiy chatiga keldi.</div>
+<div class="note">{{ hint }}</div>
 <form method="post" action="/account/confirm">
 <label for="code">Tasdiqlash kodi</label>
 <div class="row"><input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required style="flex:1 1 160px">
 <button class="btn primary" type="submit">Tasdiqlash</button></div>
 </form>
+<div class="row">
+<form method="post" action="/account/cancel"><button class="btn" type="submit">Bekor qilish</button></form>
+<form method="post" action="/account/qr"><button class="btn" type="submit">Kod kelmadi — QR orqali kirish</button></form>
+</div>
+{% elif step == "qr" %}
+<meta http-equiv="refresh" content="4">
+<ol style="margin:0;padding-left:20px">
+<li>Telefonda Telegram'ni oching: <strong>Sozlamalar → Qurilmalar → Qurilmani ulash</strong> (Settings → Devices → Link Desktop Device).</li>
+<li>Kamerani shu QR kodga qarating.</li>
+<li>Telefonda kirishni tasdiqlang. Sahifa o'zi yangilanadi.</li>
+</ol>
+<div style="width:240px;max-width:100%;background:#fff;padding:8px;border:1px solid var(--line);border-radius:8px">{{ qr_svg|safe }}</div>
+<div class="muted">QR har 30 soniyada yangilanadi, eng oxirgisini skanerlang.</div>
 <form method="post" action="/account/cancel"><button class="btn" type="submit">Bekor qilish</button></form>
 {% else %}
 <div class="muted">Bu akkauntda ikki bosqichli tasdiq yoqilgan.</div>

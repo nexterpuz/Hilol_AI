@@ -14,6 +14,15 @@ class FakeAgent:
         self.pipeline = pipeline
         self.status = {"connected": False, "error": "Telegram akkaunt ulanmagan."}
         self.login_step = "phone"
+        self.login_hint = "Kod Telegram ilovasiga yuborildi"
+        self.login_error = ""
+
+    def qr_svg(self):
+        return "<svg data-test='qr'></svg>" if self.login_step == "qr" else ""
+
+    async def begin_qr(self):
+        self.login_step = "qr"
+        return ""
 
     async def begin_login(self, phone):
         if phone != "+998901234567":
@@ -128,6 +137,12 @@ def test_panel_flow():
     assert "Ulangan" in acc and "Premium" in acc and "admin emas" in acc
     c.post("/account/logout")
     assert "ulanmagan" in c.get("/account").text
+    # QR orqali kirish sahifasi
+    c.post("/account/qr")
+    qr = c.get("/account").text
+    assert "data-test='qr'" in qr and "Qurilmani ulash" in qr and 'http-equiv="refresh"' in qr
+    c.post("/account/cancel")
+    assert "QR kod orqali kirish" in c.get("/account").text
 
     # qoidalar
     c.post("/rules", data={"text": "Aksiya postlari tasdiqdan keyin"})
@@ -158,3 +173,16 @@ def test_db_url_normalised(monkeypatch):
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host:5432/db")
     assert config._db_url() == "postgresql+asyncpg://u:p@host:5432/db"
+
+
+def test_code_hint_and_qr_svg():
+    from telethon.tl import types
+
+    from app.agent import Agent, _code_hint
+
+    assert "ilovasiga" in _code_hint(types.auth.SentCodeTypeApp(length=5))
+    assert "SMS" in _code_hint(types.auth.SentCodeTypeSms(length=5))
+    agent = Agent("manba")
+    assert agent.qr_svg() == "" and agent.login_step == "phone"
+    agent._login = {"mode": "qr", "qr": type("Q", (), {"url": "tg://login?token=abc"})(), "need_password": False}
+    assert agent.qr_svg().startswith("<svg") and agent.login_step == "qr"

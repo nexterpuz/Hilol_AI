@@ -34,6 +34,22 @@ def decrypt(token: str) -> str | None:
         return None
 
 
+def _code_hint(sent_type) -> str:
+    """Telegram tasdiqlash kodini qayerga yuborganini tushuntiradi."""
+    name = type(sent_type).__name__
+    if name == "SentCodeTypeApp":
+        return "Kod Telegram ilovasiga yuborildi: \"Telegram\" nomli rasmiy chatni (arxiv va boshqa qurilmalarda ham) tekshiring."
+    if name in ("SentCodeTypeSms", "SentCodeTypeFragmentSms", "SentCodeTypeFirebaseSms"):
+        return "Kod SMS orqali yuborildi."
+    if name == "SentCodeTypeEmailCode":
+        return f"Kod akkauntga bog'langan emailga yuborildi ({getattr(sent_type, 'email_pattern', '')})."
+    if name in ("SentCodeTypeCall", "SentCodeTypeFlashCall", "SentCodeTypeMissedCall"):
+        return "Kod telefon qo'ng'irog'i orqali beriladi."
+    if name == "SentCodeTypeSetUpEmailRequired":
+        return "Telegram bu akkauntga kod yuborish uchun email ulashni talab qilyapti. QR orqali kiring."
+    return f"Kod yuborildi ({name})."
+
+
 class Agent:
     def __init__(self, source_username: str, notifier=None):
         self.source_username = source_username
@@ -144,17 +160,80 @@ class Agent:
         except Exception as e:
             await client.disconnect()
             return f"Kod yuborilmadi: {e}"
-        self._login = {"client": client, "phone": phone, "hash": sent.phone_code_hash, "need_password": False}
+        self._login = {
+            "mode": "code", "client": client, "phone": phone, "hash": sent.phone_code_hash,
+            "need_password": False, "hint": _code_hint(sent.type), "error": "",
+        }
         return ""
+
+    async def begin_qr(self) -> str:
+        """QR orqali kirishni boshlaydi (kod kelmasa ishlatiladi)."""
+        if not settings.secret_from_env:
+            return "Avval SECRET_KEY o'zgaruvchisini o'rnating — usiz sessiya qayta ishga tushganda yo'qoladi."
+        await self.cancel_login()
+        client = TelegramClient(StringSession(), settings.api_id, settings.api_hash)
+        try:
+            await client.connect()
+            qr = await client.qr_login()
+        except Exception as e:
+            await client.disconnect()
+            return f"QR yaratilmadi: {e}"
+        self._login = {"mode": "qr", "client": client, "qr": qr, "need_password": False, "hint": "", "error": ""}
+        self._login["task"] = asyncio.create_task(self._qr_wait(self._login))
+        return ""
+
+    async def _qr_wait(self, st: dict) -> None:
+        """QR skanerlanishini kutadi; har 30 soniyada eskirgan QR yangilanadi (jami ~5 daqiqa)."""
+        for _ in range(10):
+            try:
+                await st["qr"].wait()
+                await self._complete(st["client"])
+                return
+            except asyncio.TimeoutError:
+                try:
+                    await st["qr"].recreate()
+                except Exception as e:
+                    st["error"] = f"QR yangilanmadi: {e}"
+                    return
+            except errors.SessionPasswordNeededError:
+                st["need_password"] = True
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.exception("qr login")
+                st["error"] = f"Kirib bo'lmadi: {e}"
+                return
+        st["error"] = "QR muddati tugadi. Qaytadan boshlang."
+
+    def qr_svg(self) -> str:
+        if not self._login or self._login.get("mode") != "qr":
+            return ""
+        import segno
+
+        return segno.make(self._login["qr"].url, error="m").svg_inline(scale=6, border=2)
+
+    @property
+    def login_hint(self) -> str:
+        return self._login.get("hint", "") if self._login else ""
+
+    @property
+    def login_error(self) -> str:
+        return self._login.get("error", "") if self._login else ""
 
     @property
     def login_step(self) -> str:
         if not self._login:
             return "phone"
-        return "password" if self._login["need_password"] else "code"
+        if self._login["need_password"]:
+            return "password"
+        return "qr" if self._login.get("mode") == "qr" else "code"
 
     async def cancel_login(self) -> None:
         if self._login:
+            task = self._login.get("task")
+            if task and task is not asyncio.current_task():
+                task.cancel()
             await self._login["client"].disconnect()
             self._login = None
 
@@ -181,6 +260,10 @@ class Agent:
             return "Ikki bosqichli parol noto'g'ri."
         except Exception as e:
             return f"Kirib bo'lmadi: {e}"
+        return await self._complete(client)
+
+    async def _complete(self, client: TelegramClient) -> str:
+        """Kirish muvaffaqiyatli: sessiyani shifrlab saqlaydi va agentni shu akkauntda ishga tushiradi."""
         me = await client.get_me()
         session = client.session.save()
         await client.disconnect()
