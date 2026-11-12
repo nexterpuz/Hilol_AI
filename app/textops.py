@@ -6,6 +6,7 @@ kesish/qo'shish amallari "surrogate" ko'rinishidagi matn ustida bajariladi.
 from __future__ import annotations
 
 import copy
+import re
 
 from telethon.extensions import html
 from telethon.helpers import add_surrogate, del_surrogate
@@ -62,6 +63,23 @@ def append_template(text: str, entities: list | None, template_html: str):
     for e in tpl_entities:
         e.offset += shift
     return prefix + tpl_text, entities + list(tpl_entities)
+
+
+MESSAGE_LINK = re.compile(r"t\.me/(?:c/(\d+)|([A-Za-z][A-Za-z0-9_]{3,}))/(?:\d+/)?(\d+)")
+
+
+def parse_message_link(link: str):
+    """t.me/kanal/123 yoki t.me/c/1234567890/123 -> (kanal, xabar id) yoki None."""
+    m = MESSAGE_LINK.search(link or "")
+    if not m:
+        return None
+    private_id, username, msg_id = m.groups()
+    return (int("-100" + private_id) if private_id else username), int(msg_id)
+
+
+def message_to_template(text: str, entities: list | None) -> str:
+    """Telegram xabarini shablon HTML'iga aylantiradi: havolalar, qalin matn va premium emojilar saqlanadi."""
+    return html.unparse(text or "", entities or []).strip()
 
 
 def build_post(text: str, entities: list | None, cta_start_line: int | None, template_html: str):

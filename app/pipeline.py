@@ -11,7 +11,7 @@ from telethon.tl.types import MessageMediaWebPage
 from . import ai
 from .config import settings
 from .db import Delivery, Rule, Session, SourcePost, Target, log as db_log, now
-from .textops import build_post, fits
+from .textops import build_post, fits, message_to_template, parse_message_link
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +69,20 @@ class Pipeline:
         if not (perms.is_admin and perms.post_messages):
             return f"Agent akkaunti @{username} kanalida post joylash huquqiga ega admin emas."
         return ""
+
+    async def fetch_template(self, link: str) -> tuple[str, str]:
+        """Havoladagi Telegram xabarini shablonga aylantiradi. Qaytaradi: (html, xato matni)."""
+        parsed = parse_message_link(link)
+        if not parsed:
+            return "", "Havola noto'g'ri. Xabar havolasi kerak, masalan: https://t.me/kanal/123"
+        chat, msg_id = parsed
+        try:
+            msg = await self.client.get_messages(chat, ids=msg_id)
+        except Exception as e:
+            return "", f"Xabarni o'qib bo'lmadi: {e}"
+        if msg is None or not msg.message:
+            return "", "Xabar topilmadi yoki unda matn yo'q."
+        return message_to_template(msg.message, msg.entities), ""
 
     # ---------- yangi post ----------
 

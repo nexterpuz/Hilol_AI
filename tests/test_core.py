@@ -76,3 +76,31 @@ def test_decide():
     assert decide("smart", no, 0.8)[0] == "skip"
     assert decide("smart", unsure, 0.8)[0] == "ask"
     assert decide("smart", None, 0.8)[0] == "ask"
+
+
+def test_message_link_and_premium_emoji_template():
+    from telethon.helpers import add_surrogate
+
+    from app.textops import message_to_template, parse_message_link
+
+    assert parse_message_link("https://t.me/Hilol_qoqon_test/15") == ("Hilol_qoqon_test", 15)
+    assert parse_message_link("https://t.me/c/1234567890/42") == (-1001234567890, 42)
+    assert parse_message_link("t.me/Hilol_qoqon_test/15?single") == ("Hilol_qoqon_test", 15)
+    assert parse_message_link("https://t.me/Hilol_qoqon_test") is None
+
+    text = "🤙 +998-90\n📍 Manzil"
+    ents = [
+        MessageEntityCustomEmoji(offset=0, length=2, document_id=111),
+        MessageEntityCustomEmoji(offset=len(add_surrogate("🤙 +998-90\n")), length=2, document_id=222),
+        MessageEntityTextUrl(offset=len(add_surrogate("🤙 +998-90\n📍 ")), length=6, url="https://maps.example/x"),
+    ]
+    tpl = message_to_template(text, ents)
+    assert 'emoji-id="111"' in tpl and 'emoji-id="222"' in tpl and "maps.example" in tpl
+    # shablon postga qo'shilganda premium emoji entity sifatida qaytadi, offseti to'g'ri
+    out, out_ents = build_post("Kitob 📚", [], None, tpl)
+    custom = [e for e in out_ents if isinstance(e, MessageEntityCustomEmoji)]
+    assert [e.document_id for e in custom] == [111, 222]
+    s = add_surrogate(out)
+    assert s[custom[0].offset : custom[0].offset + custom[0].length] == add_surrogate("🤙")
+    assert s[custom[1].offset : custom[1].offset + custom[1].length] == add_surrogate("📍")
+    assert out.startswith("Kitob 📚\n\n🤙 +998-90\n📍 Manzil")

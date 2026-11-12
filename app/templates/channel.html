@@ -17,7 +17,7 @@
 <div>
 <label for="tpl">Aloqa bloki shabloni</label>
 <textarea id="tpl" name="template_html" rows="7">{{ t.template_html if t }}</textarea>
-<div class="muted">Bosh kanalning aloqa bloki o'rniga shu matn qo'yiladi. Havola: &lt;a href="https://..."&gt;matn&lt;/a&gt;, qalin: &lt;b&gt;matn&lt;/b&gt;.</div>
+<div class="muted">Bosh kanalning aloqa bloki o'rniga shu matn qo'yiladi. Havola: &lt;a href="https://..."&gt;matn&lt;/a&gt;, qalin: &lt;b&gt;matn&lt;/b&gt;. Premium emoji &lt;tg-emoji&gt; tegi bilan yoziladi — uni qo'lda yozmang, pastdagi "Shablonni Telegram xabaridan olish" orqali kiriting.</div>
 </div>
 <div>
 <label for="kw">Filial kalit so'zlari</label>
@@ -32,6 +32,18 @@
 <div class="row"><button class="btn primary" type="submit">Saqlash</button></div>
 </form>
 {% if t %}
+<form class="card" method="post" action="/channels/{{ t.id }}/template-import">
+<h2>Shablonni Telegram xabaridan olish</h2>
+<ol class="muted" style="margin:0;padding-left:20px">
+<li>Aloqa blokini Telegram'da xohlaganingizdek yozing: premium emojilar, havolalar, qalin matn bilan.</li>
+<li>Uni agent akkaunti o'qiy oladigan kanalga post qiling (masalan, shu filial kanaliga yoki test kanalga).</li>
+<li>Postga bosib "Havolani nusxalash" ni tanlang va havolani shu yerga qo'ying. Shablon saqlangach, postni o'chirsangiz bo'ladi.</li>
+</ol>
+<label for="link">Xabar havolasi</label>
+<div class="row"><input id="link" name="link" type="text" required placeholder="https://t.me/Hilol_qoqon_test/15" style="flex:1 1 260px">
+<button class="btn" type="submit">Shablonni olish</button></div>
+<div class="muted">Joriy shablon to'liq almashtiriladi.</div>
+</form>
 <form class="card" method="post" action="/channels/{{ t.id }}/delete" onsubmit="return confirm('Kanal va uning statistikasi o\'chiriladi. Davom etasizmi?')">
 <h2>Kanalni o'chirish</h2>
 <div class="muted">Kanal ro'yxatdan olinadi va yig'ilgan statistikasi o'chadi. Telegram'dagi postlarga tegilmaydi.</div>

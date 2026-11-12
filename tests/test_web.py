@@ -67,6 +67,11 @@ class FakePipeline:
         self.published.append(delivery_id)
         return True
 
+    async def fetch_template(self, link):
+        if "t.me/" not in link:
+            return "", "Havola noto'g'ri."
+        return '<tg-emoji emoji-id="5368324170671202286">🤙</tg-emoji> +998-90-000-00-00', ""
+
     async def check_target(self, username):
         return "" if username != "yomon" else "Agent admin emas"
 
@@ -117,6 +122,12 @@ def test_panel_flow():
     assert r.headers["location"].endswith("saved=1")
     page = c.get(f"/channels/{target_id}?saved=1").text
     assert "Qo&#39;qon 2" in page and "Saqlandi" in page
+    # shablonni Telegram xabaridan olish (premium emoji bilan)
+    c.post(f"/channels/{target_id}/template-import", data={"link": "yaroqsiz"})
+    assert "Havola noto" in c.get(f"/channels/{target_id}").text
+    c.post(f"/channels/{target_id}/template-import", data={"link": "https://t.me/qoqon_x/15"})
+    tpl_page = c.get(f"/channels/{target_id}").text
+    assert "tg-emoji emoji-id=&#34;5368324170671202286&#34;" in tpl_page and "Premium yo" in tpl_page
     # yangi kanal, agent admin bo'lmagan holat
     r = c.post("/channels/0", data={"name": "Yangi", "username": "@yomon", "mode": "smart"})
     assert "Agent admin emas" in c.get(r.headers["location"]).text

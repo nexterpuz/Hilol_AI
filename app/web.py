@@ -281,6 +281,25 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                 request.session["warning"] = problem
         return _go(f"/channels/{new_id}?saved=1")
 
+    @app.post("/channels/{target_id}/template-import")
+    async def channel_template_import(request: Request, target_id: int, link: str = Form("")):
+        if agent is None or agent.pipeline is None:
+            request.session["warning"] = "Telegram akkaunt ulanmagan — xabarni o'qib bo'lmaydi."
+            return _go(f"/channels/{target_id}")
+        template, error = await agent.pipeline.fetch_template(link)
+        if error:
+            request.session["warning"] = error
+            return _go(f"/channels/{target_id}")
+        async with Session() as s:
+            target = await s.get(Target, target_id)
+            if target is None:
+                return _go("/channels")
+            target.template_html = template
+            await s.commit()
+        if "<tg-emoji" in template and not agent.status.get("premium"):
+            request.session["warning"] = "Shablonda premium emoji bor, lekin agent akkauntida Premium yo'q: Telegram ularni oddiy emojiga almashtiradi."
+        return _go(f"/channels/{target_id}?saved=1")
+
     @app.post("/channels/{target_id}/toggle")
     async def channel_toggle(target_id: int):
         async with Session() as s:
