@@ -92,7 +92,7 @@ function drawHeat(bt) {
       const c = map[d + "-" + h];
       if (!c || c[key] === null) { html += '<div class="cell" aria-hidden="true"></div>'; continue; }
       const k = max ? c[key] / max : 0;  // bitta rang, ochdan to'qqa
-      const color = `hsl(224 76% ${Math.round(90 - k * 52)}%)`;
+      const color = `hsl(148 58% ${Math.round(88 - k * 62)}%)`;
       const text = `${name}, ${String(h).padStart(2, "0")}:00 — ${key === "reach" ? "qamrov" : "ko'rishlar"} ${fmt(c[key], suffix)}, ${c.posts} ta post`;
       html += `<button type="button" class="cell has" style="background:${color}" data-tip="${esc(text)}" aria-label="${esc(text)}"></button>`;
     }

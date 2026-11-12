@@ -269,10 +269,13 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
 
     @app.middleware("http")
     async def auth(request: Request, call_next):
-        if request.url.path != "/login" and not request.session.get("user"):
+        public = request.url.path == "/login" or request.url.path in ("/static/logo.png", "/static/mark.png")
+        if not public and not request.session.get("user"):
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"error": "unauthorized"}, status_code=401)
             return _go("/login")
+        if request.method == "GET" and not request.url.path.startswith(("/api/", "/static/")) and request.url.path != "/login":
+            request.state.pending = await pending_count()  # menyudagi navbat belgisi uchun
         return await call_next(request)
 
     # Oxirgi qo'shilgan middleware eng tashqarida ishlaydi: sessiya auth'dan oldin ochilishi kerak
@@ -281,11 +284,16 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         https_only=settings.cookie_secure, max_age=7 * 24 * 3600,
     )
 
+    async def pending_count() -> int:
+        async with Session() as s:
+            return len(list((await s.execute(select(Delivery.id).where(Delivery.status == "pending"))).scalars()))
+
     def page(request: Request, name: str, **ctx):
         connected = bool(agent and agent.status.get("connected"))
         return templates.TemplateResponse(
             request, name,
-            {"modes": MODES, "path": request.url.path, "connected": connected, "ephemeral_db": EPHEMERAL_DB, **ctx},
+            {"modes": MODES, "path": request.url.path, "connected": connected, "ephemeral_db": EPHEMERAL_DB,
+             "pending_count": getattr(request.state, "pending", 0), **ctx},
         )
 
     # ---------- kirish ----------

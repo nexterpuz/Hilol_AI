@@ -3,20 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kirish</title>
+<title>Kirish — Hilol Nashr</title>
+<link rel="icon" type="image/png" href="/static/mark.png">
 <style>
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F5F6F8;color:#14181F;font:14px/1.45 system-ui,sans-serif;padding:16px}
-form{background:#fff;border:1px solid #E3E6EB;border-radius:12px;padding:28px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px}
-h1{margin:0;font-size:20px}label{font-weight:600;display:block;margin-bottom:6px}
-input{width:100%;box-sizing:border-box;min-height:44px;border:1px solid #C9CED6;border-radius:8px;padding:0 12px;font:inherit}
-button{min-height:44px;border:0;border-radius:8px;background:#1D4ED8;color:#fff;font:inherit;font-weight:600;cursor:pointer}
-p{margin:0;color:#B42318}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F4F6F5;color:#14201A;font:14px/1.5 "Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px}
+form{background:#fff;border:1px solid #E2E7E4;border-radius:16px;padding:32px;width:100%;max-width:380px;display:flex;flex-direction:column;gap:16px;box-shadow:0 8px 30px rgba(20,32,26,.06)}
+img{height:56px;width:auto;align-self:flex-start}
+h1{margin:0;font-size:20px}.sub{margin:-10px 0 0;color:#5A665F}
+label{font-weight:600;display:block;margin-bottom:6px}
+input{width:100%;box-sizing:border-box;min-height:44px;border:1px solid #C7CFCA;border-radius:10px;padding:0 12px;font:inherit}
+input:focus{border-color:#1B7F4B;outline:2px solid #E7F5EC}
+button{min-height:46px;border:0;border-radius:10px;background:#1B7F4B;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+button:hover{background:#14633A}
+.err{margin:0;color:#B42318;background:#FEF0EE;border:1px solid #F3C1BA;border-radius:10px;padding:10px 12px}
 </style>
 </head>
 <body>
 <form method="post" action="/login">
-<h1>Repost Agent</h1>
-{% if error %}<p role="alert">Login yoki parol noto'g'ri.</p>{% endif %}
+<img src="/static/logo.png" alt="Hilol Nashr">
+<h1>Kanallar markazi</h1>
+<p class="sub">Filial Telegram kanallarini boshqarish paneli</p>
+{% if error %}<p class="err" role="alert">Login yoki parol noto'g'ri.</p>{% endif %}
 <div><label for="u">Login</label><input id="u" name="username" autocomplete="username" required></div>
 <div><label for="p">Parol</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
 <button type="submit">Kirish</button>

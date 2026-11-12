@@ -1,7 +1,7 @@
 <script src="/static/chart.umd.js"></script>
 <script>
 // Umumiy yordamchilar: son formati, davr tugmalari, avtomatik yangilanish
-const ACCENT = "#1D4ED8", GRID = "#E3E6EB", MUTED = "#5B6472";
+const ACCENT = "#1F8F55", GRID = "#E2E7E4", MUTED = "#5A665F";
 const fmt = (v, suffix = "") => v === null || v === undefined ? "—" : v.toLocaleString("ru-RU").replace(/,/g, ".") + suffix;
 const signed = v => v === null || v === undefined ? "—" : (v > 0 ? "+" : "") + fmt(v);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
