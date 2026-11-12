@@ -27,7 +27,7 @@ yangilanadi yoki o'chiriladi.
 ## Ishga tushirish
 
 1. `.env.example` ni `.env` ga nusxalab to'ldiring.
-2. Sessiya satrini oling: `TG_API_ID=... TG_API_HASH=... python scripts/login.py`
+2. Sessiya satrini oling: `docker compose run --rm agent python scripts/login.py` — chiqqan satrni `.env` dagi `TG_SESSION_STRING` ga yozing.
 3. `docker compose up -d --build`
 4. Jurnal: `docker compose logs -f agent`
 
