@@ -85,7 +85,7 @@ async def _seed():
         await s.flush()
         s.add(StatChannel(target_id=t.id, subscribers=1000, at=now() - timedelta(days=2)))
         s.add(StatChannel(target_id=t.id, subscribers=1100, at=now()))
-        s.add(StatPost(delivery_id=sent.id, views=440))
+        s.add(StatPost(delivery_id=sent.id, views=440, reach=0.4))
         await s.commit()
         return t.id, pend.id
 
@@ -106,6 +106,11 @@ def test_panel_flow():
     home = c.get("/").text
     assert "1 100" in home and "+100" in home and "40%" in home and "440" in home
     assert c.get("/?days=7").status_code == 200
+
+    # postlar analitikasi va jurnal
+    posts_page = c.get("/posts").text
+    assert "Yangi kitob" in posts_page and "440" in posts_page and "40%" in posts_page
+    assert c.get("/log").status_code == 200
 
     # kanalni tahrirlash
     r = c.post(f"/channels/{target_id}", data={"name": "Qo'qon 2", "username": "https://t.me/qoqon_x", "mode": "auto", "template_html": "T", "keywords": "k", "sync_edits": "1"})
@@ -218,3 +223,14 @@ def test_source_setting_persists():
         return b.source_username
 
     assert asyncio.run(run()) == "Haqiqiy_kanal"
+
+
+def test_views_at():
+    from app.web import views_at
+
+    sent = now() - timedelta(hours=30)
+    snaps = [(sent + timedelta(minutes=50), 100), (sent + timedelta(hours=24, minutes=10), 400), (sent + timedelta(hours=29), 450)]
+    assert views_at(snaps, sent, 1, now()) == 100
+    assert views_at(snaps, sent, 24, now()) == 400
+    assert views_at(snaps, sent, 72, now()) is None  # hali 72 soat o'tmagan
+    assert views_at([], sent, 1, now()) is None

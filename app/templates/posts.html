@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% macro n(v, suffix="") %}{% if v is none %}—{% else %}{{ "{:,}".format(v).replace(",", " ") }}{{ suffix }}{% endif %}{% endmacro %}
+{% block main %}
+<div class="row between">
+<h1>Postlar</h1>
+<div class="row">{% for d in (7, 30, 90) %}<a class="btn {{ 'primary' if d == days }}" href="/posts?days={{ d }}">{{ d }} kun</a>{% endfor %}</div>
+</div>
+{% if best %}
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+<section class="card"><h2>Eng yaxshi qamrov</h2>
+{% for r in best %}<div class="row between"><span style="flex:1 1 160px">{{ r.text }}</span><strong class="ok">{{ r.reach }}%</strong></div>{% endfor %}
+</section>
+{% if worst %}
+<section class="card"><h2>Eng past qamrov</h2>
+{% for r in worst %}<div class="row between"><span style="flex:1 1 160px">{{ r.text }}</span><strong class="warn">{{ r.reach }}%</strong></div>{% endfor %}
+</section>
+{% endif %}
+</div>
+{% endif %}
+<section class="card">
+<div class="muted">Ko'rishlar barcha filial kanallari bo'yicha jamlangan. Qamrov — ko'rishlar ÷ obunachilar, kanallar bo'yicha o'rtacha. Statistika soatiga bir marta yig'iladi.</div>
+<div class="scroll">
+<table>
+<thead><tr><th>Post</th><th>Vaqti</th><th class="num">Kanallar</th><th class="num">1 soat</th><th class="num">24 soat</th><th class="num">72 soat</th><th class="num">Hozir</th><th class="num">Qamrov</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr>
+<td>{{ r.text }}{% if r.deleted %} <span class="muted">(o'chirilgan)</span>{% endif %}</td>
+<td>{{ r.when }}</td>
+<td class="num">{{ r.channels }}</td>
+<td class="num">{{ n(r.v1) }}</td>
+<td class="num">{{ n(r.v24) }}</td>
+<td class="num">{{ n(r.v72) }}</td>
+<td class="num">{{ n(r.now) }}</td>
+<td class="num">{{ n(r.reach, "%") }}</td>
+</tr>
+{% else %}
+<tr><td colspan="8" class="muted">Bu davrda post yo'q.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+{% endblock %}

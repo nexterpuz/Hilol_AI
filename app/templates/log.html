@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Jurnal</h1>
+<section class="card">
+<div class="muted">Agentning oxirgi 200 ta harakati, Toshkent vaqti bilan.</div>
+<div class="scroll">
+<table>
+<thead><tr><th>Vaqti</th><th>Hodisa</th><th>Tafsilot</th></tr></thead>
+<tbody>
+{% for e in items %}
+<tr><td>{{ e.when }}</td><td>{% if e.bad %}<span class="danger">{{ e.label }}</span>{% else %}{{ e.label }}{% endif %}</td><td>{{ e.detail }}</td></tr>
+{% else %}
+<tr><td colspan="3" class="muted">Hali hodisa yo'q.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+{% endblock %}

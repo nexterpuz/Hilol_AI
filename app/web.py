@@ -5,7 +5,7 @@ import asyncio
 import hmac
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
@@ -73,6 +73,74 @@ async def dashboard_data(days: int) -> dict:
     }
 
 
+TASHKENT = timezone(timedelta(hours=5))
+EVENT_LABELS = {
+    "new_post": "Yangi post", "sent": "Yuborildi", "failed": "Xatolik", "edited": "Tahrir sinxronlandi",
+    "deleted": "O'chirish sinxronlandi", "account_started": "Akkaunt ulandi", "account_lost": "Akkaunt uzildi",
+    "source_changed": "Manba o'zgartirildi",
+}
+
+
+def _utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)  # SQLite vaqtni zonasiz qaytaradi
+
+
+def local_time(dt: datetime | None) -> str:
+    return _utc(dt).astimezone(TASHKENT).strftime("%d.%m %H:%M") if dt else "—"
+
+
+def views_at(snapshots: list, sent_at: datetime, hours: int, at_time: datetime) -> int | None:
+    """Post yuborilganidan `hours` soat o'tgandagi ko'rishlar soni (statistika soatiga bir yig'iladi)."""
+    deadline = _utc(sent_at) + timedelta(hours=hours)
+    if at_time < deadline:
+        return None  # hali shuncha vaqt o'tmagan
+    past = [v for at, v in snapshots if _utc(at) <= deadline + timedelta(minutes=40)]
+    return past[-1] if past else None
+
+
+def _total(values: list) -> int | None:
+    values = [v for v in values if v is not None]
+    return sum(values) if values else None
+
+
+async def posts_data(days: int) -> dict:
+    since = now() - timedelta(days=days)
+    async with Session() as s:
+        posts = list((await s.execute(
+            select(SourcePost).where(SourcePost.created_at >= since).order_by(SourcePost.id.desc()).limit(100)
+        )).scalars())
+        ids = [p.id for p in posts]
+        sent = list((await s.execute(
+            select(Delivery).where(Delivery.post_id.in_(ids), Delivery.status.in_(("sent", "deleted")), Delivery.sent_at.is_not(None))
+        )).scalars()) if ids else []
+        d_ids = [d.id for d in sent]
+        stats_rows = list((await s.execute(
+            select(StatPost).where(StatPost.delivery_id.in_(d_ids)).order_by(StatPost.at)
+        )).scalars()) if d_ids else []
+    snaps: dict = defaultdict(list)
+    reach: dict = {}
+    for r in stats_rows:
+        snaps[r.delivery_id].append((r.at, r.views))
+        if r.reach is not None:
+            reach[r.delivery_id] = r.reach
+    t = now()
+    rows = []
+    for p in posts:
+        mine = [d for d in sent if d.post_id == p.id]
+        rr = [reach[d.id] for d in mine if d.id in reach]
+        rows.append({
+            "id": p.id, "text": (p.text or "(matnsiz post)").split("\n")[0][:90], "when": local_time(p.created_at),
+            "deleted": p.deleted, "channels": len(mine),
+            "v1": _total([views_at(snaps[d.id], d.sent_at, 1, t) for d in mine]),
+            "v24": _total([views_at(snaps[d.id], d.sent_at, 24, t) for d in mine]),
+            "v72": _total([views_at(snaps[d.id], d.sent_at, 72, t) for d in mine]),
+            "now": _total([snaps[d.id][-1][1] if snaps[d.id] else None for d in mine]),
+            "reach": round(100 * sum(rr) / len(rr)) if rr else None,
+        })
+    ranked = sorted((r for r in rows if r["reach"] is not None), key=lambda r: r["reach"], reverse=True)
+    return {"rows": rows, "best": ranked[:3], "worst": ranked[-3:][::-1] if len(ranked) > 3 else []}
+
+
 def svg_points(series: list[int], w: int = 600, h: int = 200) -> str:
     """Chiziqli grafik uchun SVG nuqtalari."""
     if len(series) < 2:
@@ -138,6 +206,24 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         days = days if days in (7, 30, 90) else 30
         data = await dashboard_data(days)
         return page(request, "dashboard.html", days=days, points=svg_points(data["series"]), **data)
+
+    # ---------- postlar va jurnal ----------
+
+    @app.get("/posts")
+    async def posts(request: Request, days: int = 30):
+        days = days if days in (7, 30, 90) else 30
+        return page(request, "posts.html", days=days, **(await posts_data(days)))
+
+    @app.get("/log")
+    async def journal(request: Request):
+        async with Session() as s:
+            events = list((await s.execute(select(Event).order_by(Event.id.desc()).limit(200))).scalars())
+        items = [
+            {"when": local_time(e.created_at), "label": EVENT_LABELS.get(e.kind, e.kind), "detail": e.detail,
+             "bad": e.kind in ("failed", "account_lost")}
+            for e in events
+        ]
+        return page(request, "log.html", items=items)
 
     # ---------- kanallar ----------
 

@@ -44,11 +44,13 @@ form.inline{display:inline}
 <nav aria-label="Asosiy menyu">
 <div class="brand">Repost Agent</div>
 <a href="/" class="{{ 'on' if path == '/' }}">Dashboard</a>
+<a href="/posts" class="{{ 'on' if path == '/posts' }}">Postlar</a>
 <a href="/channels" class="{{ 'on' if path.startswith('/channels') }}">Kanallar</a>
 <a href="/queue" class="{{ 'on' if path == '/queue' }}">Tasdiq navbati</a>
 <a href="/account" class="{{ 'on' if path == '/account' }}">Telegram akkaunt{% if not connected %} <span class="badge">!</span>{% endif %}</a>
 <a href="/integrations" class="{{ 'on' if path == '/integrations' }}">Integratsiyalar</a>
 <a href="/rules" class="{{ 'on' if path == '/rules' }}">AI qoidalari</a>
+<a href="/log" class="{{ 'on' if path == '/log' }}">Jurnal</a>
 <form method="post" action="/logout"><button type="submit">Chiqish</button></form>
 </nav>
 <main>{% block main %}{% endblock %}</main>
