@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from .adminbot import AdminBot
 from .agent import Agent
-from .config import settings
+from .config import EPHEMERAL_DB, settings
 from .db import Rule, Session, Target, init_db
 from .web import create_app
 
@@ -39,6 +39,9 @@ async def main() -> None:
     if settings.database_url.startswith("sqlite"):
         os.makedirs("data", exist_ok=True)
     await init_db()
+    log.info("Baza: %s", settings.database_url.split("://")[0])
+    if EPHEMERAL_DB:
+        log.error("DATABASE_URL o'rnatilmagan: vaqtinchalik SQLite ishlatilmoqda, har bir deployda barcha ma'lumot o'chadi!")
     source_username = await seed()
 
     notifier = None

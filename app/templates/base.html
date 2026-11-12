@@ -53,7 +53,9 @@ form.inline{display:inline}
 <a href="/log" class="{{ 'on' if path == '/log' }}">Jurnal</a>
 <form method="post" action="/logout"><button type="submit">Chiqish</button></form>
 </nav>
-<main>{% block main %}{% endblock %}</main>
+<main>
+{% if ephemeral_db %}<div class="note danger" role="alert"><strong>Doimiy baza ulanmagan.</strong> DATABASE_URL o'zgaruvchisi topilmadi, shuning uchun ma'lumotlar vaqtinchalik faylda turibdi va har bir yangilanishda o'chadi (Telegram akkaunt ham uziladi). Railway'da Hilol_AI xizmatining Variables bo'limiga DATABASE_URL = ${{ '{{' }}Postgres.DATABASE_URL{{ '}}' }} qo'shing.</div>{% endif %}
+{% block main %}{% endblock %}</main>
 </div>
 </body>
 </html>

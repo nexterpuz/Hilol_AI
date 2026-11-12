@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select
 from starlette.middleware.sessions import SessionMiddleware
 
-from .config import settings
+from .config import EPHEMERAL_DB, settings
 from .db import Delivery, Event, Rule, Session, SourcePost, StatChannel, StatPost, Target, now
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -174,7 +174,8 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
     def page(request: Request, name: str, **ctx):
         connected = bool(agent and agent.status.get("connected"))
         return templates.TemplateResponse(
-            request, name, {"modes": MODES, "path": request.url.path, "connected": connected, **ctx}
+            request, name,
+            {"modes": MODES, "path": request.url.path, "connected": connected, "ephemeral_db": EPHEMERAL_DB, **ctx},
         )
 
     # ---------- kirish ----------
@@ -405,6 +406,15 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                 "detail": f"Model: {settings.ai_model}" if os.environ.get("ANTHROPIC_API_KEY") else "ANTHROPIC_API_KEY o'rnatilmagan",
             },
         ]
+        is_pg = settings.database_url.startswith("postgresql")
+        connected.append({
+            "name": "Ma'lumotlar bazasi", "ok": not EPHEMERAL_DB, "link": "",
+            "role": "Kanallar, sozlamalar, Telegram sessiyasi, statistika",
+            "detail": "PostgreSQL" if is_pg else (
+                "Vaqtinchalik SQLite: har bir yangilanishda hamma narsa o'chadi. DATABASE_URL ni tekshiring."
+                if EPHEMERAL_DB else "SQLite (lokal fayl)"
+            ),
+        })
         planned = [
             {"name": "Instagram", "stage": "Keyingi bosqich", "role": "Post va Reels joylash", "detail": "Biznes akkaunt va unga bog'langan Facebook sahifasi kerak"},
             {"name": "Facebook sahifa", "stage": "Keyingi bosqich", "role": "Sahifaga post joylash", "detail": "Instagram bilan bitta ulanish orqali ishlaydi"},

@@ -49,3 +49,5 @@ class Settings:
 
 
 settings = Settings()
+# Konteyner ichidagi SQLite fayli har bir deployda o'chadi: PaaS'da doimiy baza shart
+EPHEMERAL_DB = _ON_PAAS and settings.database_url.startswith("sqlite")
