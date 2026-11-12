@@ -13,7 +13,7 @@ from telethon.sessions import StringSession
 
 from . import stats
 from .config import settings
-from .db import Account, Session, Target, log as db_log
+from .db import Account, Session, Setting, Target, log as db_log
 from .pipeline import Pipeline
 
 log = logging.getLogger(__name__)
@@ -60,6 +60,7 @@ class Agent:
         self._stats_task: asyncio.Task | None = None
         self._watch_task: asyncio.Task | None = None
         self._login: dict | None = None  # panel orqali kirish jarayoni
+        self._session: str | None = None  # joriy sessiya (manba almashganda qayta ulanish uchun)
 
     # ---------- ishga tushirish / to'xtatish ----------
 
@@ -101,6 +102,7 @@ class Agent:
             if not alive and client is self.client:
                 self._watch_task = None  # o'zini bekor qilmasligi uchun
                 await self.stop()
+                self._session = None
                 await self._lost("Sessiya Telegram tomonidan bekor qilingan (boshqa qurilmadan tugatilgan yoki bir vaqtda ikki joydan ulangan).")
                 return
 
@@ -158,7 +160,7 @@ class Agent:
         async def _delete(event):
             await pipeline.on_delete(event.chat_id, list(event.deleted_ids))
 
-        self.client, self.pipeline = client, pipeline
+        self.client, self.pipeline, self._session = client, pipeline, session
         if self.notifier:
             self.notifier.pipeline = pipeline
         self._stats_task = asyncio.create_task(stats.run(client))
@@ -182,6 +184,41 @@ class Agent:
         self.client = self.pipeline = None
         if self.notifier:
             self.notifier.pipeline = None
+
+    async def load_source(self) -> None:
+        """Panelda saqlangan manba kanal bo'lsa, seed.json dagisining o'rniga shuni oladi."""
+        async with Session() as s:
+            row = await s.get(Setting, "source")
+        if row and row.value:
+            self.source_username = row.value
+
+    async def set_source(self, username: str) -> str:
+        """Manba kanalni almashtiradi va agentni qayta ulaydi. Xato matni yoki bo'sh satr."""
+        username = username.strip().removeprefix("https://t.me/").lstrip("@")
+        if not username:
+            return "Kanal username'ini kiriting."
+        if self.client:
+            try:
+                entity = await self.client.get_entity(username)
+            except Exception as e:
+                return f"Kanal topilmadi (@{username}): {e}"
+            if not getattr(entity, "broadcast", False):
+                return f"@{username} kanal emas."
+            if getattr(entity, "left", False):
+                return f"Agent akkaunti @{username} kanaliga obuna emas. Avval obuna bo'ling — aks holda yangi postlar kelmaydi."
+        async with Session() as s:
+            row = await s.get(Setting, "source")
+            if row:
+                row.value = username
+            else:
+                s.add(Setting(key="source", value=username))
+            await s.commit()
+        self.source_username = username
+        await db_log("source_changed", username)
+        if self._session:
+            await self.start(self._session)
+            return self.status.get("error", "")
+        return ""
 
     async def check_targets(self) -> list[str]:
         """Faol kanallarning qaysilarida akkaunt post joylay olmaydi."""
@@ -334,6 +371,7 @@ class Agent:
             except Exception:
                 log.exception("log_out")
         await self.stop()
+        self._session = None
         async with Session() as s:
             await s.execute(update(Account).values(active=False))
             await s.commit()

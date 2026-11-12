@@ -1,7 +1,19 @@
 {% extends "base.html" %}
 {% block main %}
 <div class="row between"><h1>Kanallar</h1><a class="btn primary" href="/channels/0">Kanal qo'shish</a></div>
+{% if saved %}<div class="note ok" role="status">{{ saved }}</div>{% endif %}
+{% if warning %}<div class="note warn" role="alert">{{ warning }}</div>{% endif %}
 <section class="card">
+<h2>Manba kanal</h2>
+<div class="muted">Agent shu kanaldagi yangi postlarni, tahrir va o'chirishlarni kuzatadi. Agent akkaunti unga obuna bo'lishi kerak. O'zgartirilganda ilgari ko'chirilgan postlar xaritasi saqlanadi.</div>
+<form method="post" action="/source">
+<label for="source">Kanal username yoki havolasi</label>
+<div class="row"><input id="source" name="username" type="text" required value="{{ source }}" style="flex:1 1 240px">
+<button class="btn" type="submit">O'zgartirish</button></div>
+</form>
+</section>
+<section class="card">
+<h2>Qabul qiluvchi kanallar</h2>
 <div class="scroll">
 <table>
 <thead><tr><th>Kanal</th><th>Username</th><th>Rejim</th><th>Holat</th><th></th></tr></thead>

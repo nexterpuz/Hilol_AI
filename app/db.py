@@ -31,6 +31,14 @@ class Account(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class Setting(Base):
+    """Paneldan o'zgartiriladigan umumiy sozlamalar (kalit -> qiymat)."""
+
+    __tablename__ = "settings"
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+
+
 class Target(Base):
     """Qabul qiluvchi (filial) kanal."""
 

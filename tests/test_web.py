@@ -16,6 +16,13 @@ class FakeAgent:
         self.login_step = "phone"
         self.login_hint = "Kod Telegram ilovasiga yuborildi"
         self.login_error = ""
+        self.source_username = "eski_manba"
+
+    async def set_source(self, username):
+        if username == "yoq":
+            return "Kanal topilmadi"
+        self.source_username = username
+        return ""
 
     def qr_svg(self):
         return "<svg data-test='qr'></svg>" if self.login_step == "qr" else ""
@@ -111,6 +118,13 @@ def test_panel_flow():
     # takroriy username rad etiladi
     c.post("/channels/0", data={"name": "Dubl", "username": "qoqon_x"})
     assert "allaqachon" in c.get("/channels/0").text
+    # manba kanalni almashtirish
+    assert 'value="eski_manba"' in c.get("/channels").text
+    c.post("/source", data={"username": "yoq"})
+    assert "Kanal topilmadi" in c.get("/channels").text
+    c.post("/source", data={"username": "yangi_manba"})
+    ch = c.get("/channels").text
+    assert "o&#39;zgartirildi" in ch and 'value="yangi_manba"' in ch
     c.post(f"/channels/{target_id}/toggle")
     assert "Davom ettirish" in c.get("/channels").text
 
@@ -190,3 +204,17 @@ def test_code_hint_and_qr_svg():
     assert agent.qr_svg() == "" and agent.login_step == "phone"
     agent._login = {"mode": "qr", "qr": type("Q", (), {"url": "tg://login?token=abc"})(), "need_password": False}
     assert agent.qr_svg().startswith("<svg") and agent.login_step == "qr"
+
+
+def test_source_setting_persists():
+    from app.agent import Agent
+
+    async def run():
+        await init_db()
+        a = Agent("seeddagi")
+        assert await a.set_source("https://t.me/Haqiqiy_kanal") == ""
+        b = Agent("seeddagi")
+        await b.load_source()
+        return b.source_username
+
+    assert asyncio.run(run()) == "Haqiqiy_kanal"

@@ -145,7 +145,16 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
     async def channels(request: Request):
         async with Session() as s:
             targets = list((await s.execute(select(Target).order_by(Target.id))).scalars())
-        return page(request, "channels.html", targets=targets)
+        return page(
+            request, "channels.html", targets=targets, source=agent.source_username if agent else "",
+            warning=request.session.pop("warning", ""), saved=request.session.pop("saved", ""),
+        )
+
+    @app.post("/source")
+    async def source_save(request: Request, username: str = Form("")):
+        error = await agent.set_source(username)
+        request.session["warning" if error else "saved"] = error or "Manba kanal o'zgartirildi."
+        return _go("/channels")
 
     @app.get("/channels/{target_id}")
     async def channel_form(request: Request, target_id: int, saved: int = 0):
