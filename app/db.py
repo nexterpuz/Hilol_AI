@@ -18,6 +18,19 @@ class Base(DeclarativeBase):
     pass
 
 
+class Account(Base):
+    """Agent ishlaydigan Telegram akkaunt. Sessiya shifrlangan holda saqlanadi."""
+
+    __tablename__ = "accounts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    phone: Mapped[str] = mapped_column(String(32), default="")
+    session_enc: Mapped[str] = mapped_column(Text)
+    premium: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Target(Base):
     """Qabul qiluvchi (filial) kanal."""
 

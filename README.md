@@ -9,7 +9,8 @@ yangilanadi yoki o'chiriladi.
 
 | Fayl | Vazifasi |
 |---|---|
-| `app/main.py` | Ishga tushirish, Telegram hodisalarini tinglash |
+| `app/main.py` | Ishga tushirish |
+| `app/agent.py` | Telegram akkaunt holati, hodisalarni tinglash, panel orqali kirish va almashtirish |
 | `app/pipeline.py` | Yangi post, tahrir, o'chirish oqimi; rejimlar (auto / smart / manual) |
 | `app/ai.py` | Claude: aloqa bloki qayerda, post qaysi filialga mos |
 | `app/textops.py` | Matnni kesish va shablon qo'shish (formatlash saqlanadi) |
@@ -36,6 +37,19 @@ Lokal sinov (Docker'siz, SQLite bilan): `pip install -r requirements.txt && pyth
 
 Testlar: `pip install pytest && python -m pytest tests`
 
+## Railway'da ishga tushirish
+
+1. Railway loyihasiga shu repozitoriyni ulang (Dockerfile avtomatik ishlatiladi).
+2. Loyihaga **PostgreSQL** qo'shing va xizmatning Variables bo'limida
+   `DATABASE_URL = ${{Postgres.DATABASE_URL}}` deb yozing.
+3. Variables: `TG_API_ID`, `TG_API_HASH`, `TG_BOT_TOKEN`, `ADMIN_IDS`,
+   `ANTHROPIC_API_KEY`, `ADMIN_USER`, `ADMIN_PASSWORD`, `SECRET_KEY`.
+4. Settings → Networking → **Generate Domain**. Panel shu HTTPS manzilda ochiladi.
+5. Panelda **Telegram akkaunt** sahifasida telefon raqam, kod va (bo'lsa) ikki
+   bosqichli parolni kiriting. `TG_SESSION_STRING` va `scripts/login.py` kerak emas.
+
+`SECRET_KEY` ni keyin o'zgartirmang: saqlangan Telegram sessiyasi shu kalit bilan shifrlangan.
+
 ## Admin panel
 
 Panel xavfsizlik uchun faqat serverning ichki manzilida (`127.0.0.1:8080`) ochiladi.
@@ -49,6 +63,6 @@ HTTPS orqali ochiq manzilga chiqarish mumkin (`COOKIE_SECURE=1` bilan).
 
 ## Hozircha yo'q
 
-- Panelda Telegram akkauntni almashtirish va integratsiyalar sahifasi (akkaunt hozircha `.env` dagi `TG_SESSION_STRING` orqali almashtiriladi).
+- Integratsiyalar sahifasi.
 - Manbada media almashtirilgan tahrirni sinxronlash (faqat matn tahriri sinxronlanadi).
 - Instagram va boshqa platformalar.

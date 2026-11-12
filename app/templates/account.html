@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Telegram akkaunt</h1>
+{% if error %}<div class="note danger" role="alert">{{ error }}</div>{% endif %}
+{% for p in problems %}<div class="note warn" role="alert">{{ p }}</div>{% endfor %}
+<section class="card">
+<h2>Joriy akkaunt</h2>
+{% if status.connected %}
+<div class="row between note">
+<div><strong>{{ status.name }}</strong>{% if status.username %} · @{{ status.username }}{% endif %}
+<div class="muted">{{ status.phone }} · {{ "Premium" if status.premium else "Premium emas" }} · manba: @{{ status.source }}</div></div>
+<span class="ok">Ulangan</span>
+</div>
+<form method="post" action="/account/logout" onsubmit="return confirm('Sessiya uziladi va agent to\'xtaydi. Davom etasizmi?')">
+<button class="btn danger" type="submit"><span class="danger">Sessiyani uzish</span></button>
+</form>
+{% else %}
+<div class="note warn">{{ status.error or "Telegram akkaunt ulanmagan." }}</div>
+{% endif %}
+</section>
+<section class="card">
+<h2>{{ "Akkauntni almashtirish" if status.connected else "Akkauntga kirish" }}</h2>
+{% if step == "phone" %}
+<div class="muted">Akkaunt manba kanalga obuna va barcha filial kanallarida admin bo'lishi kerak. Almashtirganda eski postlar xaritasi saqlanadi.</div>
+<form method="post" action="/account/phone">
+<label for="phone">Telefon raqam</label>
+<div class="row"><input id="phone" name="phone" type="text" inputmode="tel" required placeholder="+998 90 123 45 67" style="flex:1 1 220px">
+<button class="btn primary" type="submit">Kod yuborish</button></div>
+</form>
+{% elif step == "code" %}
+<div class="muted">Kod Telegram ilovasidagi "Telegram" rasmiy chatiga keldi.</div>
+<form method="post" action="/account/confirm">
+<label for="code">Tasdiqlash kodi</label>
+<div class="row"><input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required style="flex:1 1 160px">
+<button class="btn primary" type="submit">Tasdiqlash</button></div>
+</form>
+<form method="post" action="/account/cancel"><button class="btn" type="submit">Bekor qilish</button></form>
+{% else %}
+<div class="muted">Bu akkauntda ikki bosqichli tasdiq yoqilgan.</div>
+<form method="post" action="/account/confirm">
+<label for="pw">Ikki bosqichli parol</label>
+<div class="row"><input id="pw" name="password" type="password" autocomplete="off" required style="flex:1 1 200px">
+<button class="btn primary" type="submit">Kirish</button></div>
+</form>
+<form method="post" action="/account/cancel"><button class="btn" type="submit">Bekor qilish</button></form>
+{% endif %}
+</section>
+{% endblock %}

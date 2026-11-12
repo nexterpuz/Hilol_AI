@@ -82,7 +82,7 @@ def svg_points(series: list[int], w: int = 600, h: int = 200) -> str:
     return " ".join(f"{i * step:.1f},{h - 10 - (v - lo) / span * (h - 20):.1f}" for i, v in enumerate(series))
 
 
-def create_app(pipeline=None) -> FastAPI:
+def create_app(agent=None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     @app.middleware("http")
     async def auth(request: Request, call_next):
@@ -97,7 +97,10 @@ def create_app(pipeline=None) -> FastAPI:
     )
 
     def page(request: Request, name: str, **ctx):
-        return templates.TemplateResponse(request, name, {"modes": MODES, "path": request.url.path, **ctx})
+        connected = bool(agent and agent.status.get("connected"))
+        return templates.TemplateResponse(
+            request, name, {"modes": MODES, "path": request.url.path, "connected": connected, **ctx}
+        )
 
     # ---------- kirish ----------
 
@@ -169,8 +172,8 @@ def create_app(pipeline=None) -> FastAPI:
             s.add(target)
             await s.commit()
             new_id = target.id
-        if pipeline is not None:
-            problem = await pipeline.check_target(username)
+        if agent is not None and agent.pipeline is not None:
+            problem = await agent.pipeline.check_target(username)
             if problem:
                 request.session["warning"] = problem
         return _go(f"/channels/{new_id}?saved=1")
@@ -213,12 +216,14 @@ def create_app(pipeline=None) -> FastAPI:
                 if post is None or post.deleted:
                     continue
                 items.append({"d": d, "target": await s.get(Target, d.target_id), "text": post.text or "(matnsiz post)"})
-        return page(request, "queue.html", items=items)
+        return page(request, "queue.html", items=items, warning=request.session.pop("warning", ""))
 
     @app.post("/queue/{delivery_id}/send")
-    async def queue_send(delivery_id: int):
-        if pipeline is not None:
-            await pipeline.publish(delivery_id)
+    async def queue_send(request: Request, delivery_id: int):
+        if agent is None or agent.pipeline is None:
+            request.session["warning"] = "Telegram akkaunt ulanmagan — post yuborilmadi."
+        else:
+            await agent.pipeline.publish(delivery_id)
         return _go("/queue")
 
     @app.post("/queue/{delivery_id}/reject")
@@ -229,6 +234,42 @@ def create_app(pipeline=None) -> FastAPI:
                 d.status = "rejected"
                 await s.commit()
         return _go("/queue")
+
+    # ---------- Telegram akkaunt ----------
+
+    @app.get("/account")
+    async def account(request: Request):
+        return page(
+            request, "account.html", status=agent.status, step=agent.login_step,
+            error=request.session.pop("warning", ""), problems=request.session.pop("problems", []),
+        )
+
+    @app.post("/account/phone")
+    async def account_phone(request: Request, phone: str = Form("")):
+        phone = "+" + "".join(ch for ch in phone if ch.isdigit())
+        error = await agent.begin_login(phone) if len(phone) > 8 else "Telefon raqamni xalqaro formatda kiriting."
+        if error:
+            request.session["warning"] = error
+        return _go("/account")
+
+    @app.post("/account/confirm")
+    async def account_confirm(request: Request, code: str = Form(""), password: str = Form("")):
+        error = await agent.finish_login(code=code, password=password)
+        if error:
+            request.session["warning"] = error
+        elif agent.status.get("connected"):
+            request.session["problems"] = await agent.check_targets()
+        return _go("/account")
+
+    @app.post("/account/cancel")
+    async def account_cancel():
+        await agent.cancel_login()
+        return _go("/account")
+
+    @app.post("/account/logout")
+    async def account_logout():
+        await agent.logout()
+        return _go("/account")
 
     # ---------- qoidalar ----------
 

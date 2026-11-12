@@ -7,6 +7,42 @@ from app.db import Delivery, Rule, Session, SourcePost, StatChannel, StatPost, T
 from app.web import create_app, svg_points
 
 
+class FakeAgent:
+    """Telegram'siz agent: kirish jarayonini taqlid qiladi."""
+
+    def __init__(self, pipeline):
+        self.pipeline = pipeline
+        self.status = {"connected": False, "error": "Telegram akkaunt ulanmagan."}
+        self.login_step = "phone"
+
+    async def begin_login(self, phone):
+        if phone != "+998901234567":
+            return "Kod yuborilmadi"
+        self.login_step = "code"
+        return ""
+
+    async def finish_login(self, code="", password=""):
+        if self.login_step == "code":
+            if code != "12345":
+                return "Kod noto'g'ri."
+            self.login_step = "password"
+            return ""
+        if password != "maxfiy":
+            return "Ikki bosqichli parol noto'g'ri."
+        self.login_step = "phone"
+        self.status = {"connected": True, "error": "", "name": "Sinov", "username": "sinov", "phone": "+99890…67", "premium": True, "source": "manba"}
+        return ""
+
+    async def check_targets(self):
+        return ["Agent akkaunti @x kanalida admin emas."]
+
+    async def cancel_login(self):
+        self.login_step = "phone"
+
+    async def logout(self):
+        self.status = {"connected": False, "error": "Telegram akkaunt ulanmagan."}
+
+
 class FakePipeline:
     def __init__(self):
         self.published = []
@@ -41,7 +77,8 @@ async def _seed():
 def test_panel_flow():
     target_id, pending_id = asyncio.run(_seed())
     pipe = FakePipeline()
-    c = TestClient(create_app(pipe), follow_redirects=False)
+    agent = FakeAgent(pipe)
+    c = TestClient(create_app(agent), follow_redirects=False)
 
     # kirmasdan hech narsa ochilmaydi
     assert c.get("/").status_code == 303 and c.get("/").headers["location"] == "/login"
@@ -76,6 +113,22 @@ def test_panel_flow():
     c.post(f"/queue/{pending_id}/reject")
     assert "Navbat bo" in c.get("/queue").text
 
+    # Telegram akkauntga panel orqali kirish
+    assert "ulanmagan" in c.get("/account").text
+    c.post("/account/phone", data={"phone": "123"})
+    assert "xalqaro formatda" in c.get("/account").text
+    c.post("/account/phone", data={"phone": "+998 90 123-45-67"})
+    assert "Tasdiqlash kodi" in c.get("/account").text
+    c.post("/account/confirm", data={"code": "00000"})
+    assert "Kod noto" in c.get("/account").text
+    c.post("/account/confirm", data={"code": "12345"})
+    assert "Ikki bosqichli parol" in c.get("/account").text
+    c.post("/account/confirm", data={"password": "maxfiy"})
+    acc = c.get("/account").text
+    assert "Ulangan" in acc and "Premium" in acc and "admin emas" in acc
+    c.post("/account/logout")
+    assert "ulanmagan" in c.get("/account").text
+
     # qoidalar
     c.post("/rules", data={"text": "Aksiya postlari tasdiqdan keyin"})
     assert "Aksiya postlari" in c.get("/rules").text
@@ -90,3 +143,18 @@ def test_panel_flow():
 def test_svg_points():
     assert svg_points([5]) == ""
     assert svg_points([0, 10]).split() == ["0.0,190.0", "600.0,10.0"]
+
+
+def test_session_encryption_roundtrip():
+    from app.agent import decrypt, encrypt
+
+    token = encrypt("1BVtsOK-sessiya")
+    assert token != "1BVtsOK-sessiya" and decrypt(token) == "1BVtsOK-sessiya"
+    assert decrypt("buzilgan") is None
+
+
+def test_db_url_normalised(monkeypatch):
+    from app import config
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host:5432/db")
+    assert config._db_url() == "postgresql+asyncpg://u:p@host:5432/db"

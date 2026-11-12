@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block main %}
 <h1>Tasdiq navbati</h1>
+{% if warning %}<div class="note warn" role="alert">{{ warning }}</div>{% endif %}
 {% for i in items %}
 <section class="card">
 <div class="row between">

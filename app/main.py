@@ -6,15 +6,14 @@ import json
 import logging
 import os
 
+import uvicorn
 from sqlalchemy import select
-from telethon import TelegramClient, events
-from telethon.sessions import StringSession
 
-from . import stats
 from .adminbot import AdminBot
+from .agent import Agent
 from .config import settings
 from .db import Rule, Session, Target, init_db
-from .pipeline import Pipeline
+from .web import create_app
 
 log = logging.getLogger("agent")
 
@@ -35,61 +34,43 @@ async def seed() -> str:
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if not (settings.api_id and settings.api_hash):
+        raise SystemExit("TG_API_ID va TG_API_HASH o'rnatilmagan")
     if settings.database_url.startswith("sqlite"):
         os.makedirs("data", exist_ok=True)
     await init_db()
     source_username = await seed()
 
-    client = TelegramClient(StringSession(settings.session_string), settings.api_id, settings.api_hash)
-    await client.connect()
-    if not await client.is_user_authorized():
-        raise SystemExit("Telegram sessiyasi yo'q yoki eskirgan. Avval: python scripts/login.py")
-    me = await client.get_me()
-    source = await client.get_entity(source_username)
-    log.info("Akkaunt: %s (premium=%s); manba: %s", me.first_name, bool(me.premium), source_username)
-
     notifier = None
     if settings.bot_token and settings.admin_ids:
-        notifier = AdminBot()
-        await notifier.start()
+        try:
+            notifier = AdminBot()
+            await notifier.start()
+        except Exception:
+            log.exception("Admin bot ishga tushmadi (TG_BOT_TOKEN ni tekshiring)")
+            notifier = None
     else:
-        log.warning("TG_BOT_TOKEN yoki ADMIN_IDS yo'q: tasdiq va hisobotlar ishlamaydi")
+        log.warning("TG_BOT_TOKEN yoki ADMIN_IDS yo'q: Telegram orqali tasdiq va hisobotlar ishlamaydi")
 
-    pipeline = Pipeline(client, source, notifier, premium=bool(me.premium))
-    if notifier:
-        notifier.pipeline = pipeline
-
-    @client.on(events.NewMessage(chats=source))
-    async def _new(event):
-        if event.message.grouped_id is None:  # albomlar pastda alohida ushlanadi
-            await pipeline.on_new([event.message])
-
-    @client.on(events.Album(chats=source))
-    async def _album(event):
-        await pipeline.on_new(list(event.messages))
-
-    @client.on(events.MessageEdited(chats=source))
-    async def _edit(event):
-        await pipeline.on_edit(event.message)
-
-    @client.on(events.MessageDeleted(chats=source))
-    async def _delete(event):
-        await pipeline.on_delete(event.chat_id, list(event.deleted_ids))
-
-    if notifier:
-        await notifier.say("Agent ishga tushdi.")
-    asyncio.create_task(stats.run(client))
-    if settings.admin_password:
-        import uvicorn
-
-        from .web import create_app
-
-        config = uvicorn.Config(create_app(pipeline), host=settings.web_host, port=settings.web_port, log_level="warning")
-        asyncio.create_task(uvicorn.Server(config).serve())
-        log.info("Admin panel: http://%s:%s", settings.web_host, settings.web_port)
+    agent = Agent(source_username, notifier)
+    await agent.start_from_storage()
+    if agent.status["connected"]:
+        if notifier:
+            await notifier.say("Agent ishga tushdi.")
     else:
+        log.warning("Agent kutish holatida: %s", agent.status["error"])
+
+    if not settings.admin_password:
         log.warning("ADMIN_PASSWORD yo'q: veb admin panel o'chirilgan")
-    await client.run_until_disconnected()
+        await asyncio.Event().wait()
+    if not settings.secret_from_env:
+        log.warning("SECRET_KEY yo'q: panel sessiyalari va akkauntga kirish qayta ishga tushganda yo'qoladi")
+    config = uvicorn.Config(
+        create_app(agent), host=settings.web_host, port=settings.web_port,
+        log_level="warning", proxy_headers=True, forwarded_allow_ips="*",
+    )
+    log.info("Admin panel: %s:%s", settings.web_host, settings.web_port)
+    await uvicorn.Server(config).serve()
 
 
 if __name__ == "__main__":
