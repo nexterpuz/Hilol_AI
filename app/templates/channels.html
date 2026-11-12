@@ -25,6 +25,7 @@
 <td>{{ modes[t.mode] }}</td>
 <td>{% if t.active %}<span class="ok">Faol</span>{% else %}<span class="muted">To'xtatilgan</span>{% endif %}</td>
 <td class="num">
+<a class="btn" href="/channels/{{ t.id }}/stats">Analitika</a>
 <a class="btn" href="/channels/{{ t.id }}">Sozlash</a>
 <form class="inline" method="post" action="/channels/{{ t.id }}/toggle"><button class="btn" type="submit">{{ "To'xtatish" if t.active else "Davom ettirish" }}</button></form>
 </td>

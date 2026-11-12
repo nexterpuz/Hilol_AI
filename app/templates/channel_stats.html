@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="row between">
+<div><h1>{{ t.name }}</h1><div class="muted">@{{ t.username }} · {{ modes[t.mode] }} · {% if t.active %}faol{% else %}to'xtatilgan{% endif %}</div></div>
+<div class="row">
+<span class="live"><i></i><span id="updated">Yuklanmoqda…</span></span>
+<div class="seg" id="days" role="group" aria-label="Davr">
+<button type="button" data-v="7" aria-pressed="false">7 kun</button><button type="button" data-v="30" aria-pressed="true">30 kun</button><button type="button" data-v="90" aria-pressed="false">90 kun</button>
+</div>
+<a class="btn" href="/channels/{{ t.id }}">Sozlash</a>
+</div>
+</div>
+<div class="grid">
+<div class="card kpi"><div class="muted">Obunachilar</div><div class="v" id="k-subs">—</div><div class="muted" id="k-growth"></div></div>
+<div class="card kpi"><div class="muted">Ko'chirilgan postlar</div><div class="v" id="k-posts">—</div><div class="muted">tanlangan davrda</div></div>
+<div class="card kpi"><div class="muted">O'rtacha ko'rish</div><div class="v" id="k-views">—</div><div class="muted">bitta postga</div></div>
+<div class="card kpi"><div class="muted">O'rtacha qamrov</div><div class="v" id="k-reach">—</div><div class="muted">ko'rishlar ÷ obunachilar</div></div>
+</div>
+<section class="card">
+<h2>Obunachilar soni</h2>
+<div class="chart"><canvas id="subs" role="img" aria-label="Obunachilar soni vaqt bo'yicha"></canvas></div>
+<div class="muted" id="subs-note"></div>
+</section>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+<section class="card"><h2>Eng yaxshi postlar</h2><div id="best" class="muted">—</div></section>
+<section class="card"><h2>Eng sust postlar</h2><div id="worst" class="muted">—</div></section>
+</div>
+<section class="card">
+<h2>Postlar</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Post</th><th>Chiqqan vaqti</th><th class="num">Ko'rishlar</th><th class="num">Qamrov</th></tr></thead>
+<tbody id="posts"><tr><td colspan="4" class="muted">Yuklanmoqda…</td></tr></tbody>
+</table>
+</div>
+</section>
+{% include "_charts.html" %}
+<script>
+let chart;
+const getDays = segmented("days", () => refresh());
+const list = (rows, cls) => rows.length ? rows.map(r => `<div class="row between" style="color:var(--text)"><span style="flex:1 1 160px">${esc(r.text)}</span><strong class="${cls}">${fmt(r.reach, "%")}</strong></div>`).join("") : "Hali ma'lumot yetarli emas.";
+const refresh = autoRefresh(async () => {
+  const d = await getJSON("/api/channel/{{ t.id }}?days=" + getDays());
+  document.getElementById("k-subs").textContent = fmt(d.subs);
+  document.getElementById("k-growth").textContent = d.growth === null ? "" : `${d.days} kunda ${signed(d.growth)}`;
+  document.getElementById("k-posts").textContent = fmt(d.posts_count);
+  document.getElementById("k-views").textContent = fmt(d.avg_views);
+  document.getElementById("k-reach").textContent = fmt(d.avg_reach, "%");
+  document.getElementById("subs-note").textContent = d.series.length < 2 ? "Grafik uchun kamida ikkita o'lchov kerak. Statistika soatiga bir marta yig'iladi." : "";
+  const data = {labels: d.series.map(p => p.t), datasets: [{label: "Obunachilar", data: d.series.map(p => p.subs), borderColor: ACCENT, backgroundColor: "rgba(29,78,216,.08)", fill: true, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: ACCENT, pointHoverBorderColor: "#fff", pointHoverBorderWidth: 2, tension: 0}]};
+  if (!chart) {
+    chart = new Chart(document.getElementById("subs"), {type: "line", data, options: {
+      maintainAspectRatio: false, interaction: {mode: "index", intersect: false},
+      plugins: {legend: {display: false}, tooltip: {callbacks: {label: c => " Obunachilar: " + fmt(c.parsed.y)}}},
+      scales: {x: {grid: {display: false}, ticks: {maxTicksLimit: 8, maxRotation: 0}}, y: {grid: {color: GRID}, border: {display: false}, ticks: {callback: v => fmt(v), precision: 0}}},
+    }});
+  } else { chart.data = data; chart.update(); }
+  document.getElementById("best").innerHTML = list(d.best, "ok");
+  document.getElementById("worst").innerHTML = list(d.worst, "warn");
+  document.getElementById("posts").innerHTML = d.posts.map(r => `<tr><td>${esc(r.text)}${r.deleted ? ' <span class="muted">(o\'chirilgan)</span>' : ""}</td><td>${r.when}</td><td class="num">${fmt(r.views)}</td><td class="num">${fmt(r.reach, "%")}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">Bu davrda post yo\'q.</td></tr>';
+});
+</script>
+{% endblock %}

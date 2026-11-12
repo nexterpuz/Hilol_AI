@@ -37,6 +37,19 @@ textarea{resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-
 .note{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 pre{white-space:pre-wrap;margin:0;font:inherit}
 form.inline{display:inline}
+.seg{display:inline-flex;border:1px solid #C9CED6;border-radius:8px;overflow:hidden;background:#fff}
+.seg button{min-height:44px;padding:0 14px;border:0;border-right:1px solid #C9CED6;background:#fff;color:var(--text);font:inherit;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--accent);color:#fff;font-weight:600}
+.chart{position:relative;height:280px}
+.live{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.live i{width:8px;height:8px;border-radius:4px;background:var(--ok);display:inline-block}
+.heat{display:grid;grid-template-columns:96px repeat(24,minmax(24px,1fr));gap:2px;min-width:760px;font-size:12px}
+.heat .h{color:var(--muted);text-align:center}.heat .d{color:var(--muted);display:flex;align-items:center}
+.heat .cell{height:30px;border-radius:4px;background:#F1F3F6;border:0;padding:0;cursor:default}
+.heat .cell.has{cursor:pointer}
+.tip{position:fixed;z-index:10;background:#14181F;color:#fff;border-radius:8px;padding:8px 10px;font-size:13px;pointer-events:none;display:none;max-width:240px}
+.low{color:var(--warn);font-weight:600}
 </style>
 </head>
 <body>
@@ -44,8 +57,9 @@ form.inline{display:inline}
 <nav aria-label="Asosiy menyu">
 <div class="brand">Repost Agent</div>
 <a href="/" class="{{ 'on' if path == '/' }}">Dashboard</a>
+<a href="/analytics" class="{{ 'on' if path == '/analytics' or path.endswith('/stats') }}">Analitika</a>
 <a href="/posts" class="{{ 'on' if path == '/posts' }}">Postlar</a>
-<a href="/channels" class="{{ 'on' if path.startswith('/channels') }}">Kanallar</a>
+<a href="/channels" class="{{ 'on' if path.startswith('/channels') and not path.endswith('/stats') }}">Kanallar</a>
 <a href="/queue" class="{{ 'on' if path == '/queue' }}">Tasdiq navbati</a>
 <a href="/account" class="{{ 'on' if path == '/account' }}">Telegram akkaunt{% if not connected %} <span class="badge">!</span>{% endif %}</a>
 <a href="/integrations" class="{{ 'on' if path == '/integrations' }}">Integratsiyalar</a>

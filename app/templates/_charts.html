@@ -1,0 +1,38 @@
+<script src="/static/chart.umd.js"></script>
+<script>
+// Umumiy yordamchilar: son formati, davr tugmalari, avtomatik yangilanish
+const ACCENT = "#1D4ED8", GRID = "#E3E6EB", MUTED = "#5B6472";
+const fmt = (v, suffix = "") => v === null || v === undefined ? "—" : v.toLocaleString("ru-RU").replace(/,/g, ".") + suffix;
+const signed = v => v === null || v === undefined ? "—" : (v > 0 ? "+" : "") + fmt(v);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+if (window.Chart) {
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.color = MUTED;
+  Chart.defaults.animation.duration = 300;
+}
+function segmented(id, onChange) {
+  const box = document.getElementById(id);
+  box.addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    box.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    onChange(b.dataset.v);
+  });
+  return () => box.querySelector('button[aria-pressed="true"]').dataset.v;
+}
+async function getJSON(url) {
+  const r = await fetch(url, {credentials: "same-origin"});
+  if (r.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
+  return r.json();
+}
+function autoRefresh(fn) {
+  const stamp = document.getElementById("updated");
+  const run = async () => {
+    try { await fn(); if (stamp) stamp.textContent = "Yangilandi " + new Date().toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"}); }
+    catch (e) { if (stamp) stamp.textContent = "Yangilab bo'lmadi"; }
+  };
+  run();
+  setInterval(() => { if (!document.hidden) run(); }, 60000);
+  return run;
+}
+</script>

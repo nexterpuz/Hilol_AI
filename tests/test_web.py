@@ -101,6 +101,8 @@ def test_panel_flow():
     agent = FakeAgent(pipe)
     c = TestClient(create_app(agent), follow_redirects=False)
 
+    # kirmasdan API ham yopiq
+    assert c.get("/api/compare").status_code == 401
     # kirmasdan hech narsa ochilmaydi
     assert c.get("/").status_code == 303 and c.get("/").headers["location"] == "/login"
     assert c.post(f"/channels/{target_id}/delete").status_code == 303
@@ -116,6 +118,19 @@ def test_panel_flow():
     posts_page = c.get("/posts").text
     assert "Yangi kitob" in posts_page and "440" in posts_page and "40%" in posts_page
     assert c.get("/log").status_code == 200
+
+    # analitika: solishtirish, kanal sahifasi, eng yaxshi vaqt
+    assert c.get("/analytics").status_code == 200 and c.get(f"/channels/{target_id}/stats").status_code == 200
+    cmp_ = c.get("/api/compare?days=30").json()
+    row = next(x for x in cmp_["channels"] if x["id"] == target_id)
+    assert row["subs"] == 1100 and row["growth"] == 100 and row["growth_pct"] == 10.0 and row["reach"] == 40
+    ch = c.get(f"/api/channel/{target_id}?days=30").json()
+    assert ch["subs"] == 1100 and ch["growth"] == 100 and len(ch["series"]) == 2
+    assert ch["posts_count"] == 1 and ch["avg_views"] == 440 and ch["avg_reach"] == 40
+    assert c.get("/api/channel/999999").status_code == 404
+    bt = c.get(f"/api/besttime?days=30&target_id={target_id}").json()
+    assert bt["metric"] == "reach" and len(bt["cells"]) == 1 and bt["cells"][0]["reach"] == 40.0 and bt["cells"][0]["posts"] == 1
+    assert len(bt["weekdays"]) == 7 and bt["top"][0]["hour"] == bt["cells"][0]["hour"]
 
     # kanalni tahrirlash
     r = c.post(f"/channels/{target_id}", data={"name": "Qo'qon 2", "username": "https://t.me/qoqon_x", "mode": "auto", "template_html": "T", "keywords": "k", "sync_edits": "1"})

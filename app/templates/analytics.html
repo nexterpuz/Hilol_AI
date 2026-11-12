@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="row between">
+<h1>Analitika</h1>
+<div class="row">
+<span class="live"><i></i><span id="updated">Yuklanmoqda…</span></span>
+<div class="seg" id="days" role="group" aria-label="Davr">
+<button type="button" data-v="7" aria-pressed="false">7 kun</button><button type="button" data-v="30" aria-pressed="true">30 kun</button><button type="button" data-v="90" aria-pressed="false">90 kun</button>
+</div>
+</div>
+</div>
+
+<section class="card">
+<div class="row between">
+<h2>Kanallarni solishtirish</h2>
+<div class="seg" id="metric" role="group" aria-label="Ko'rsatkich">
+<button type="button" data-v="reach" aria-pressed="true">Qamrov</button><button type="button" data-v="growth_pct" aria-pressed="false">O'sish</button><button type="button" data-v="subs" aria-pressed="false">Obunachilar</button><button type="button" data-v="views" aria-pressed="false">Ko'rishlar</button>
+</div>
+</div>
+<div class="muted" id="metric-note"></div>
+<div class="chart" id="compare-box"><canvas id="compare" role="img" aria-label="Kanallar tanlangan ko'rsatkich bo'yicha"></canvas></div>
+<div class="scroll">
+<table>
+<thead><tr><th>#</th><th>Kanal</th><th class="num">Obunachi</th><th class="num">O'sish</th><th class="num">Postlar</th><th class="num">O'rtacha ko'rish</th><th class="num">Qamrov</th><th>Baho</th></tr></thead>
+<tbody id="rank"><tr><td colspan="8" class="muted">Yuklanmoqda…</td></tr></tbody>
+</table>
+</div>
+</section>
+
+<section class="card">
+<div class="row between">
+<h2>Eng yaxshi vaqt</h2>
+<div><label for="bt-target" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Kanal</label>
+<select id="bt-target" style="min-width:200px">
+<option value="0">Barcha kanallar</option>
+{% for t in targets %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+</select></div>
+</div>
+<div class="muted" id="bt-note"></div>
+<div class="scroll"><div class="heat" id="heat"></div></div>
+<div id="bt-top"></div>
+</section>
+<div class="tip" id="tip" role="tooltip"></div>
+
+{% include "_charts.html" %}
+<script>
+const METRICS = {
+  reach: {label: "Qamrov", suffix: "%", note: "Qamrov — bitta postni o'rtacha obunachilarning necha foizi ko'rgani."},
+  growth_pct: {label: "O'sish", suffix: "%", note: "Tanlangan davrda obunachilar soni necha foizga o'zgargani."},
+  subs: {label: "Obunachilar", suffix: "", note: "Hozirgi obunachilar soni."},
+  views: {label: "O'rtacha ko'rish", suffix: "", note: "Bitta postning o'rtacha ko'rishlar soni."},
+};
+let chart, compare = null;
+const getDays = segmented("days", () => refresh());
+const getMetric = segmented("metric", () => drawCompare());
+
+function drawCompare() {
+  if (!compare) return;
+  const key = getMetric(), m = METRICS[key];
+  document.getElementById("metric-note").textContent = m.note;
+  const rows = compare.channels.filter(c => c[key] !== null).sort((a, b) => b[key] - a[key]);
+  const box = document.getElementById("compare-box");
+  box.style.height = Math.max(160, rows.length * 34 + 50) + "px";
+  const data = {labels: rows.map(c => c.name), datasets: [{label: m.label, data: rows.map(c => c[key]), backgroundColor: ACCENT, borderRadius: 4, barThickness: 18}]};
+  if (!chart) {
+    chart = new Chart(document.getElementById("compare"), {type: "bar", data, options: {
+      indexAxis: "y", maintainAspectRatio: false,
+      plugins: {legend: {display: false}, tooltip: {callbacks: {label: c => " " + METRICS[getMetric()].label + ": " + fmt(c.parsed.x, METRICS[getMetric()].suffix)}}},
+      scales: {x: {grid: {color: GRID}, border: {display: false}, ticks: {callback: v => fmt(v, METRICS[getMetric()].suffix)}}, y: {grid: {display: false}}},
+    }});
+  } else { chart.data = data; chart.update(); }
+
+  const avg = compare.avg_reach;
+  const ranked = [...compare.channels].sort((a, b) => (b[key] ?? -Infinity) - (a[key] ?? -Infinity));
+  document.getElementById("rank").innerHTML = ranked.map((c, i) => {
+    let verdict = '<span class="muted">Ma\'lumot yetarli emas</span>';
+    if (!c.active) verdict = '<span class="muted">To\'xtatilgan</span>';
+    else if (c.reach !== null && avg !== null) verdict = c.reach < avg * 0.8 ? '<span class="low">▼ O\'rtachadan past</span>' : c.reach > avg * 1.2 ? '<span class="ok">▲ O\'rtachadan yuqori</span>' : "O'rtacha";
+    return `<tr><td>${i + 1}</td><td><a href="/channels/${c.id}/stats"><strong>${esc(c.name)}</strong></a></td><td class="num">${fmt(c.subs)}</td><td class="num">${signed(c.growth)}${c.growth_pct !== null ? " (" + signed(c.growth_pct) + "%)" : ""}</td><td class="num">${c.posts}</td><td class="num">${fmt(c.views)}</td><td class="num">${fmt(c.reach, "%")}</td><td>${verdict}</td></tr>`;
+  }).join("") || '<tr><td colspan="8" class="muted">Hali kanal yo\'q.</td></tr>';
+}
+
+const tip = document.getElementById("tip");
+function drawHeat(bt) {
+  const heat = document.getElementById("heat"), key = bt.metric, suffix = key === "reach" ? "%" : "";
+  const max = Math.max(0, ...bt.cells.map(c => c[key] ?? 0));
+  const map = {}; bt.cells.forEach(c => map[c.dow + "-" + c.hour] = c);
+  let html = '<div></div>' + [...Array(24).keys()].map(h => `<div class="h">${String(h).padStart(2, "0")}</div>`).join("");
+  bt.weekdays.forEach((name, d) => {
+    html += `<div class="d">${name}</div>`;
+    for (let h = 0; h < 24; h++) {
+      const c = map[d + "-" + h];
+      if (!c || c[key] === null) { html += '<div class="cell" aria-hidden="true"></div>'; continue; }
+      const k = max ? c[key] / max : 0;  // bitta rang, ochdan to'qqa
+      const color = `hsl(224 76% ${Math.round(90 - k * 52)}%)`;
+      const text = `${name}, ${String(h).padStart(2, "0")}:00 — ${key === "reach" ? "qamrov" : "ko'rishlar"} ${fmt(c[key], suffix)}, ${c.posts} ta post`;
+      html += `<button type="button" class="cell has" style="background:${color}" data-tip="${esc(text)}" aria-label="${esc(text)}"></button>`;
+    }
+  });
+  heat.innerHTML = html;
+  document.getElementById("bt-note").textContent = bt.sample
+    ? `${bt.sample} ta post asosida, Toshkent vaqti. ${bt.mature_only ? "Faqat kamida 24 soat oldin chiqqan postlar hisobga olingan." : "Postlar hali 24 soat to'lmagan — natija dastlabki."} Rang qanchalik to'q bo'lsa, ${key === "reach" ? "qamrov" : "ko'rishlar"} shunchalik yuqori.`
+    : "Bu davrda hali ma'lumot yo'q. Statistika postlar chiqqach to'planadi.";
+  document.getElementById("bt-top").innerHTML = bt.top.length
+    ? "<strong>Eng yaxshi vaqtlar:</strong> " + bt.top.map(c => `${bt.weekdays[c.dow]} ${String(c.hour).padStart(2, "0")}:00 (${fmt(c[key], suffix)}, ${c.posts} ta post)`).join(" · ")
+    : "";
+}
+document.getElementById("heat").addEventListener("mousemove", e => {
+  const c = e.target.closest(".cell.has");
+  if (!c) { tip.style.display = "none"; return; }
+  tip.textContent = c.dataset.tip; tip.style.display = "block";
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - 250) + "px"; tip.style.top = e.clientY + 14 + "px";
+});
+document.getElementById("heat").addEventListener("mouseleave", () => tip.style.display = "none");
+document.getElementById("heat").addEventListener("focusin", e => {
+  const c = e.target.closest(".cell.has"); if (!c) return;
+  const r = c.getBoundingClientRect();
+  tip.textContent = c.dataset.tip; tip.style.display = "block"; tip.style.left = Math.min(r.left, innerWidth - 250) + "px"; tip.style.top = r.bottom + 6 + "px";
+});
+document.getElementById("heat").addEventListener("focusout", () => tip.style.display = "none");
+document.getElementById("bt-target").addEventListener("change", () => refresh());
+
+const refresh = autoRefresh(async () => {
+  const days = getDays(), target = document.getElementById("bt-target").value;
+  const [c, bt] = await Promise.all([getJSON("/api/compare?days=" + days), getJSON(`/api/besttime?days=${days}&target_id=${target}`)]);
+  compare = c; drawCompare(); drawHeat(bt);
+});
+</script>
+{% endblock %}

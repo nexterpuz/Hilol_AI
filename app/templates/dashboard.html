@@ -34,7 +34,7 @@
 <tbody>
 {% for r in rows %}
 <tr>
-<td><a href="/channels/{{ r.t.id }}"><strong>{{ r.t.name }}</strong></a></td>
+<td><a href="/channels/{{ r.t.id }}/stats"><strong>{{ r.t.name }}</strong></a></td>
 <td class="num">{{ n(r.subs) }}</td>
 <td class="num">{{ signed(r.growth) }}</td>
 <td class="num">{{ r.posts }}</td>

@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select
 from starlette.middleware.sessions import SessionMiddleware
@@ -141,6 +142,110 @@ async def posts_data(days: int) -> dict:
     return {"rows": rows, "best": ranked[:3], "worst": ranked[-3:][::-1] if len(ranked) > 3 else []}
 
 
+WEEKDAYS = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"]
+
+
+async def compare_data(days: int) -> dict:
+    """Filial kanallarini solishtirish uchun qatorlar."""
+    data = await dashboard_data(days)
+    channels = []
+    for r in data["rows"]:
+        subs, growth = r["subs"], r["growth"]
+        start = subs - growth if subs is not None and growth is not None else None
+        channels.append({
+            "id": r["t"].id, "name": r["t"].name, "active": r["t"].active, "subs": subs, "growth": growth,
+            "growth_pct": round(100 * growth / start, 1) if start else None,
+            "posts": r["posts"], "views": r["views"], "reach": r["reach"],
+        })
+    return {"channels": channels, "avg_reach": data["avg_reach"], "days": days}
+
+
+async def _deliveries_with_stats(since: datetime, target_id: int | None = None):
+    """Yuborilgan nusxalar va har birining eng so'nggi ko'rishlar soni / qamrovi."""
+    async with Session() as s:
+        q = select(Delivery).where(Delivery.status.in_(("sent", "deleted")), Delivery.sent_at >= since)
+        if target_id:
+            q = q.where(Delivery.target_id == target_id)
+        deliveries = list((await s.execute(q.order_by(Delivery.sent_at.desc()))).scalars())
+        ids = [d.id for d in deliveries]
+        rows = list((await s.execute(select(StatPost).where(StatPost.delivery_id.in_(ids)).order_by(StatPost.at))).scalars()) if ids else []
+        post_ids = {d.post_id for d in deliveries}
+        posts = {p.id: p for p in (await s.execute(select(SourcePost).where(SourcePost.id.in_(post_ids)))).scalars()} if post_ids else {}
+    views, reach = {}, {}
+    for r in rows:
+        views[r.delivery_id] = r.views
+        if r.reach is not None:
+            reach[r.delivery_id] = r.reach
+    return deliveries, posts, views, reach
+
+
+async def channel_data(target_id: int, days: int) -> dict | None:
+    since = now() - timedelta(days=days)
+    async with Session() as s:
+        target = await s.get(Target, target_id)
+        if target is None:
+            return None
+        chan = list((await s.execute(
+            select(StatChannel).where(StatChannel.target_id == target_id, StatChannel.at >= since).order_by(StatChannel.at)
+        )).scalars())
+    if len(chan) > 400:  # uzoq davrda kuniga bitta (oxirgi) nuqta yetarli
+        by_day = {}
+        for c in chan:
+            by_day[_utc(c.at).astimezone(TASHKENT).date()] = c
+        chan = list(by_day.values())
+    series = [{"t": _utc(c.at).astimezone(TASHKENT).strftime("%d.%m %H:%M"), "subs": c.subscribers} for c in chan]
+    deliveries, posts, views, reach = await _deliveries_with_stats(since, target_id)
+    rows = []
+    for d in deliveries:
+        post = posts.get(d.post_id)
+        rows.append({
+            "text": ((post.text if post else "") or "(matnsiz post)").split("\n")[0][:90],
+            "when": local_time(d.sent_at), "deleted": d.status == "deleted",
+            "views": views.get(d.id), "reach": round(100 * reach[d.id]) if d.id in reach else None,
+        })
+    ranked = sorted((r for r in rows if r["reach"] is not None), key=lambda r: r["reach"], reverse=True)
+    vv = [r["views"] for r in rows if r["views"] is not None]
+    rr = [r["reach"] for r in rows if r["reach"] is not None]
+    subs = chan[-1].subscribers if chan else None
+    return {
+        "name": target.name, "username": target.username, "active": target.active, "days": days,
+        "series": series, "subs": subs, "growth": subs - chan[0].subscribers if chan else None,
+        "posts_count": len(rows), "avg_views": round(sum(vv) / len(vv)) if vv else None,
+        "avg_reach": round(sum(rr) / len(rr)) if rr else None,
+        "posts": rows[:100], "best": ranked[:3], "worst": ranked[-3:][::-1] if len(ranked) > 3 else [],
+    }
+
+
+async def besttime_data(days: int, target_id: int | None = None) -> dict:
+    """Hafta kuni va soat bo'yicha o'rtacha qamrov (Toshkent vaqti)."""
+    since = now() - timedelta(days=days)
+    deliveries, _, views, reach = await _deliveries_with_stats(since, target_id)
+    cutoff = now() - timedelta(hours=24)
+    # Adolatli solishtirish uchun kamida 24 soat yig'ilgan postlar; ular bo'lmasa — borini olamiz
+    mature = [d for d in deliveries if _utc(d.sent_at) <= cutoff]
+    used = mature or deliveries
+    buckets: dict = defaultdict(lambda: {"reach": [], "views": []})
+    for d in used:
+        local = _utc(d.sent_at).astimezone(TASHKENT)
+        b = buckets[(local.weekday(), local.hour)]
+        if d.id in reach:
+            b["reach"].append(100 * reach[d.id])
+        if d.id in views:
+            b["views"].append(views[d.id])
+    cells = []
+    for (dow, hour), b in buckets.items():
+        if not b["views"] and not b["reach"]:
+            continue
+        cells.append({
+            "dow": dow, "hour": hour, "posts": max(len(b["views"]), len(b["reach"])),
+            "reach": round(sum(b["reach"]) / len(b["reach"]), 1) if b["reach"] else None,
+            "views": round(sum(b["views"]) / len(b["views"])) if b["views"] else None,
+        })
+    metric = "reach" if any(c["reach"] is not None for c in cells) else "views"
+    top = sorted((c for c in cells if c[metric] is not None), key=lambda c: c[metric], reverse=True)[:3]
+    return {"cells": cells, "metric": metric, "top": top, "weekdays": WEEKDAYS, "sample": len(used), "mature_only": bool(mature)}
+
+
 def svg_points(series: list[int], w: int = 600, h: int = 200) -> str:
     """Chiziqli grafik uchun SVG nuqtalari."""
     if len(series) < 2:
@@ -159,9 +264,14 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             await on_shutdown()  # server to'xtayotganda (SIGTERM) chaqiriladi
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    # Chart.js kutubxonasi panel ichidan beriladi (tashqi saytga bog'liq emas)
+    app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+
     @app.middleware("http")
     async def auth(request: Request, call_next):
         if request.url.path != "/login" and not request.session.get("user"):
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"error": "unauthorized"}, status_code=401)
             return _go("/login")
         return await call_next(request)
 
@@ -207,6 +317,38 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         days = days if days in (7, 30, 90) else 30
         data = await dashboard_data(days)
         return page(request, "dashboard.html", days=days, points=svg_points(data["series"]), **data)
+
+    # ---------- analitika ----------
+
+    def _days(days: int) -> int:
+        return days if days in (7, 30, 90) else 30
+
+    @app.get("/analytics")
+    async def analytics(request: Request):
+        async with Session() as s:
+            targets = list((await s.execute(select(Target).order_by(Target.id))).scalars())
+        return page(request, "analytics.html", targets=targets)
+
+    @app.get("/channels/{target_id}/stats")
+    async def channel_stats(request: Request, target_id: int):
+        async with Session() as s:
+            target = await s.get(Target, target_id)
+        if target is None:
+            return _go("/channels")
+        return page(request, "channel_stats.html", t=target)
+
+    @app.get("/api/compare")
+    async def api_compare(days: int = 30):
+        return await compare_data(_days(days))
+
+    @app.get("/api/channel/{target_id}")
+    async def api_channel(target_id: int, days: int = 30):
+        data = await channel_data(target_id, _days(days))
+        return data if data is not None else JSONResponse({"error": "not found"}, status_code=404)
+
+    @app.get("/api/besttime")
+    async def api_besttime(days: int = 30, target_id: int = 0):
+        return await besttime_data(_days(days), target_id or None)
 
     # ---------- postlar va jurnal ----------
 
