@@ -75,6 +75,7 @@ class SourcePost(Base):
     text: Mapped[str] = mapped_column(Text, default="")
     text_hash: Mapped[str] = mapped_column(String(64), default="")
     cta_start_line: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    media_ids: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {xabar id: media id}
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -125,9 +126,23 @@ engine = create_async_engine(settings.database_url)
 Session = async_sessionmaker(engine, expire_on_commit=False)
 
 
+def _migrate(conn) -> None:
+    """Mavjud jadvallarga keyin qo'shilgan ustunlarni qo'shadi (create_all buni qilmaydi)."""
+    from sqlalchemy import inspect, text
+
+    wanted = {"source_posts": {"media_ids": "JSON"}}
+    inspector = inspect(conn)
+    for table, columns in wanted.items():
+        have = {c["name"] for c in inspector.get_columns(table)}
+        for name, sql_type in columns.items():
+            if name not in have:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}"))
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate)
 
 
 async def log(kind: str, detail: str = "") -> None:

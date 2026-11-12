@@ -139,7 +139,7 @@ def test_panel_flow():
     c.post(f"/queue/{pending_id}/send")
     assert pipe.published == [pending_id]
     c.post(f"/queue/{pending_id}/reject")
-    assert "Navbat bo" in c.get("/queue").text
+    assert "AI ishonchi past" not in c.get("/queue").text  # rad etilgan post navbatdan chiqdi
 
     # Telegram akkauntga panel orqali kirish
     assert "ulanmagan" in c.get("/account").text

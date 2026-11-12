@@ -36,6 +36,15 @@ def text_hash(msg) -> str:
     return hashlib.sha256(((msg.message or "") + ents).encode()).hexdigest()
 
 
+def media_id(msg) -> int | None:
+    """Xabardagi rasm yoki faylning Telegram ID si (almashtirilganini aniqlash uchun)."""
+    if msg.photo:
+        return msg.photo.id
+    if msg.document:
+        return msg.document.id
+    return None
+
+
 def is_file(msg) -> bool:
     return bool(msg.photo or msg.document)
 
@@ -87,6 +96,7 @@ class Pipeline:
                 text=cap.message or "",
                 text_hash=text_hash(cap),
                 cta_start_line=analysis.cta_start_line if analysis else None,
+                media_ids={str(m.id): media_id(m) for m in msgs},
             )
             s.add(post)
             await s.flush()
@@ -198,17 +208,24 @@ class Pipeline:
                 return
             new_hash = text_hash(msg)
             is_caption_msg = bool(msg.message) or len(post.msg_ids) == 1
-            if not is_caption_msg or new_hash == post.text_hash:
-                return  # ko'rishlar/reaksiya o'zgarishi yoki matnga aloqasiz tahrir
+            text_changed = is_caption_msg and new_hash != post.text_hash
+            old_media, new_media = (post.media_ids or {}).get(str(msg.id)), media_id(msg)
+            # Eski postlarda media ID saqlanmagan: ularda media almashganini aniqlab bo'lmaydi
+            media_changed = old_media is not None and new_media is not None and old_media != new_media
+            if not text_changed and not media_changed:
+                return  # ko'rishlar/reaksiya o'zgarishi
             targets = list((await s.execute(select(Target))).scalars())
-            rules = [r.text for r in (await s.execute(select(Rule).where(Rule.active))).scalars()]
-            analysis = await ai.analyze(msg.message or "", [t for t in targets if t.active], rules) if msg.message else None
-            if msg.message and analysis is None:
-                if self.notifier:
-                    await self.notifier.say("Manba post tahrirlandi, lekin AI ishlamadi — nusxalar yangilanmadi. Qo'lda tekshiring.")
-                return
-            post.text, post.text_hash = msg.message or "", new_hash
-            post.cta_start_line = analysis.cta_start_line if analysis else None
+            if text_changed:
+                rules = [r.text for r in (await s.execute(select(Rule).where(Rule.active))).scalars()]
+                analysis = await ai.analyze(msg.message or "", [t for t in targets if t.active], rules) if msg.message else None
+                if msg.message and analysis is None:
+                    if self.notifier:
+                        await self.notifier.say("Manba post tahrirlandi, lekin AI ishlamadi — nusxalar yangilanmadi. Qo'lda tekshiring.")
+                    return
+                post.text, post.text_hash = msg.message or "", new_hash
+                post.cta_start_line = analysis.cta_start_line if analysis else None
+            if media_changed:
+                post.media_ids = {**(post.media_ids or {}), str(msg.id): new_media}
             deliveries = list(
                 (await s.execute(select(Delivery).where(Delivery.post_id == post.id, Delivery.status == "sent"))).scalars()
             )
@@ -221,19 +238,26 @@ class Pipeline:
             target = by_id[d.target_id]
             if not target.sync_edits or idx >= len(d.target_msg_ids) or not d.target_msg_ids[idx]:
                 continue
-            text, ents = build_post(msg.message or "", msg.entities, post.cta_start_line, target.template_html)
+            if is_caption_msg:
+                text, ents = build_post(msg.message or "", msg.entities, post.cta_start_line, target.template_html)
+            else:
+                text, ents = "", []  # albomning izohsiz elementi
             if not fits(text, is_file(msg), self.premium):
                 await self._fail_edit(target, "tahrirdan keyin matn limitdan uzun")
                 continue
             try:
-                await self.client.edit_message(target.username, d.target_msg_ids[idx], text, formatting_entities=ents)
+                await self.client.edit_message(
+                    target.username, d.target_msg_ids[idx], text, formatting_entities=ents,
+                    file=msg.media if media_changed else None,
+                )
                 updated += 1
             except Exception as e:
                 log.exception("edit")
                 await self._fail_edit(target, str(e))
-        await db_log("edited", f"post={post.id} updated={updated}")
+        what = "matn va media" if text_changed and media_changed else "media" if media_changed else "matn"
+        await db_log("edited", f"post={post.id} ({what}) updated={updated}")
         if self.notifier and updated:
-            await self.notifier.say(f"Manba post tahrirlandi — {updated} ta kanaldagi nusxa yangilandi.")
+            await self.notifier.say(f"Manba postda {what} tahrirlandi — {updated} ta kanaldagi nusxa yangilandi.")
 
     async def _fail_edit(self, target: Target, reason: str) -> None:
         if self.notifier:
