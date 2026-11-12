@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>Tasdiq navbati</h1>
+{% for i in items %}
+<section class="card">
+<div class="row between">
+<h2>{{ i.target.name if i.target else "(kanal o'chirilgan)" }}</h2>
+<span class="{{ 'danger' if i.d.status == 'failed' else 'warn' }}">{{ {"pending": "Tasdiq kutmoqda", "skipped": "AI yubormadi", "failed": "Xatolik"}[i.d.status] }}</span>
+</div>
+<div class="muted">Sabab: {{ i.d.reason }}</div>
+<pre>{{ i.text[:700] }}{% if i.text|length > 700 %}…{% endif %}</pre>
+<div class="row">
+<form method="post" action="/queue/{{ i.d.id }}/send"><button class="btn primary" type="submit">{{ "Yuborish" if i.d.status == "pending" else "Baribir yuborish" }}</button></form>
+<form method="post" action="/queue/{{ i.d.id }}/reject"><button class="btn" type="submit">Rad etish</button></form>
+</div>
+</section>
+{% else %}
+<section class="card"><div class="muted">Navbat bo'sh.</div></section>
+{% endfor %}
+{% endblock %}

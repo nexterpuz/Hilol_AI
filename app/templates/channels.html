@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="row between"><h1>Kanallar</h1><a class="btn primary" href="/channels/0">Kanal qo'shish</a></div>
+<section class="card">
+<div class="scroll">
+<table>
+<thead><tr><th>Kanal</th><th>Username</th><th>Rejim</th><th>Holat</th><th></th></tr></thead>
+<tbody>
+{% for t in targets %}
+<tr>
+<td><strong>{{ t.name }}</strong></td>
+<td>@{{ t.username }}</td>
+<td>{{ modes[t.mode] }}</td>
+<td>{% if t.active %}<span class="ok">Faol</span>{% else %}<span class="muted">To'xtatilgan</span>{% endif %}</td>
+<td class="num">
+<a class="btn" href="/channels/{{ t.id }}">Sozlash</a>
+<form class="inline" method="post" action="/channels/{{ t.id }}/toggle"><button class="btn" type="submit">{{ "To'xtatish" if t.active else "Davom ettirish" }}</button></form>
+</td>
+</tr>
+{% else %}
+<tr><td colspan="5" class="muted">Hali kanal qo'shilmagan.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+{% endblock %}

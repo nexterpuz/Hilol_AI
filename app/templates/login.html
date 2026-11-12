@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kirish</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F5F6F8;color:#14181F;font:14px/1.45 system-ui,sans-serif;padding:16px}
+form{background:#fff;border:1px solid #E3E6EB;border-radius:12px;padding:28px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px}
+h1{margin:0;font-size:20px}label{font-weight:600;display:block;margin-bottom:6px}
+input{width:100%;box-sizing:border-box;min-height:44px;border:1px solid #C9CED6;border-radius:8px;padding:0 12px;font:inherit}
+button{min-height:44px;border:0;border-radius:8px;background:#1D4ED8;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+p{margin:0;color:#B42318}
+</style>
+</head>
+<body>
+<form method="post" action="/login">
+<h1>Repost Agent</h1>
+{% if error %}<p role="alert">Login yoki parol noto'g'ri.</p>{% endif %}
+<div><label for="u">Login</label><input id="u" name="username" autocomplete="username" required></div>
+<div><label for="p">Parol</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
+<button type="submit">Kirish</button>
+</form>
+</body>
+</html>

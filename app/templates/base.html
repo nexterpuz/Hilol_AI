@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Repost Agent{% endblock %}</title>
+<style>
+:root{--bg:#F5F6F8;--card:#fff;--text:#14181F;--muted:#5B6472;--line:#E3E6EB;--accent:#1D4ED8;--accent-bg:#EAF0FE;--ok:#0F6B3C;--warn:#9A4A06;--danger:#B42318}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--accent)}
+.shell{display:flex;flex-wrap:wrap;min-height:100vh}
+nav{flex:1 1 220px;background:var(--card);border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:4px}
+nav .brand{font-weight:700;font-size:16px;padding:4px 10px 16px}
+nav a,nav button{display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:0 10px;border-radius:8px;color:var(--text);text-decoration:none;border:0;background:none;font:inherit;cursor:pointer;width:100%;text-align:left}
+nav a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+main{flex:999 1 560px;min-width:0;padding:28px 32px;display:flex;flex-direction:column;gap:20px}
+h1{margin:0;font-size:24px}h2{margin:0;font-size:16px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.between{justify-content:space-between}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.kpi .v{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted);font-size:13px}.ok{color:var(--ok)}.warn{color:var(--warn)}.danger{color:var(--danger)}
+.btn{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border-radius:8px;border:1px solid #C9CED6;background:#fff;color:var(--text);font:inherit;cursor:pointer;text-decoration:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.danger{border-color:var(--danger)}
+.scroll{overflow-x:auto}
+table{width:100%;min-width:720px;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{font-weight:500;color:var(--muted);font-size:13px;text-align:left}
+th,td{padding:10px 8px;border-bottom:1px solid var(--line)}
+.num{text-align:right}
+label{font-weight:600;display:block;margin-bottom:6px}
+input[type=text],input[type=password],textarea,select{width:100%;min-height:44px;border:1px solid #C9CED6;border-radius:8px;padding:10px 12px;font:inherit;color:var(--text);background:#fff}
+textarea{resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+.check{display:flex;align-items:center;gap:10px;min-height:44px;font-weight:400;margin:0}
+.badge{background:var(--warn);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:600}
+.note{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+pre{white-space:pre-wrap;margin:0;font:inherit}
+form.inline{display:inline}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav aria-label="Asosiy menyu">
+<div class="brand">Repost Agent</div>
+<a href="/" class="{{ 'on' if path == '/' }}">Dashboard</a>
+<a href="/channels" class="{{ 'on' if path.startswith('/channels') }}">Kanallar</a>
+<a href="/queue" class="{{ 'on' if path == '/queue' }}">Tasdiq navbati</a>
+<a href="/rules" class="{{ 'on' if path == '/rules' }}">AI qoidalari</a>
+<form method="post" action="/logout"><button type="submit">Chiqish</button></form>
+</nav>
+<main>{% block main %}{% endblock %}</main>
+</div>
+</body>
+</html>

@@ -5,6 +5,10 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://agent:${POSTGRES_PASSWORD}@db/agent
+      WEB_HOST: 0.0.0.0
+    ports:
+      # Panel faqat serverning o'zidan ochiladi; tashqaridan SSH tunnel orqali kiriladi
+      - "127.0.0.1:8080:8080"
     depends_on:
       db:
         condition: service_healthy

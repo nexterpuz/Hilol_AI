@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>AI qoidalari va istisnolar</h1>
+<section class="card">
+<div class="muted">Agent har bir postni shu qoidalar bo'yicha tekshiradi. Yangi qoidani oddiy til bilan yozing.</div>
+{% for r in rules %}
+<div class="note row between">
+<span style="flex:1 1 240px">{{ r.text }}</span>
+<form method="post" action="/rules/{{ r.id }}/delete"><button class="btn" type="submit">O'chirish</button></form>
+</div>
+{% else %}
+<div class="muted">Hali qoida yo'q.</div>
+{% endfor %}
+<form method="post" action="/rules">
+<label for="rule">Yangi qoida</label>
+<div class="row">
+<input id="rule" name="text" type="text" required style="flex:1 1 260px" placeholder="Masalan: aksiya postlari faqat tasdiqdan keyin yuborilsin">
+<button class="btn primary" type="submit">Qo'shish</button>
+</div>
+</form>
+</section>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="row between"><h1>{{ t.name if t else "Yangi kanal" }}</h1><a class="btn" href="/channels">Orqaga</a></div>
+{% if saved %}<div class="note ok" role="status">Saqlandi.</div>{% endif %}
+{% if warning %}<div class="note warn" role="alert">{{ warning }}</div>{% endif %}
+<form class="card" method="post" action="/channels/{{ t.id if t else 0 }}">
+<div class="grid">
+<div><label for="name">Nomi</label><input id="name" name="name" type="text" required value="{{ t.name if t }}"></div>
+<div><label for="username">Kanal username yoki havolasi</label><input id="username" name="username" type="text" required value="{{ t.username if t }}" placeholder="Hilol_qoqon_test"></div>
+<div><label for="mode">Ish rejimi</label>
+<select id="mode" name="mode">
+<option value="auto" {{ 'selected' if t and t.mode == 'auto' }}>Avto — har bir post darhol joylanadi</option>
+<option value="smart" {{ 'selected' if not t or t.mode == 'smart' }}>Aqlli — AI hal qiladi, shubhada so'raydi</option>
+<option value="manual" {{ 'selected' if t and t.mode == 'manual' }}>Qo'lda — har bir post tasdiqdan keyin</option>
+</select></div>
+</div>
+<div>
+<label for="tpl">Aloqa bloki shabloni</label>
+<textarea id="tpl" name="template_html" rows="7">{{ t.template_html if t }}</textarea>
+<div class="muted">Bosh kanalning aloqa bloki o'rniga shu matn qo'yiladi. Havola: &lt;a href="https://..."&gt;matn&lt;/a&gt;, qalin: &lt;b&gt;matn&lt;/b&gt;.</div>
+</div>
+<div>
+<label for="kw">Filial kalit so'zlari</label>
+<input id="kw" name="keywords" type="text" value="{{ t.keywords if t }}" placeholder="Qo'qon, Farg'ona viloyati">
+<div class="muted">Boshqa filialga tegishli yangiliklarni ajratishda AI shu so'zlarga tayanadi.</div>
+</div>
+<div class="grid">
+<label class="check"><input type="checkbox" name="sync_edits" value="1" {{ 'checked' if not t or t.sync_edits }}> Manbadagi tahrirni sinxronlash</label>
+<label class="check"><input type="checkbox" name="sync_deletes" value="1" {{ 'checked' if not t or t.sync_deletes }}> Manbada o'chirilsa, bu yerdan ham o'chirish</label>
+<label class="check"><input type="checkbox" name="silent" value="1" {{ 'checked' if t and t.silent }}> Ovozsiz yuborish</label>
+</div>
+<div class="row"><button class="btn primary" type="submit">Saqlash</button></div>
+</form>
+{% if t %}
+<form class="card" method="post" action="/channels/{{ t.id }}/delete" onsubmit="return confirm('Kanal va uning statistikasi o\'chiriladi. Davom etasizmi?')">
+<h2>Kanalni o'chirish</h2>
+<div class="muted">Kanal ro'yxatdan olinadi va yig'ilgan statistikasi o'chadi. Telegram'dagi postlarga tegilmaydi.</div>
+<div><button class="btn danger" type="submit"><span class="danger">O'chirish</span></button></div>
+</form>
+{% endif %}
+{% endblock %}

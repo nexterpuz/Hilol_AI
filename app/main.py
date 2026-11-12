@@ -79,6 +79,16 @@ async def main() -> None:
     if notifier:
         await notifier.say("Agent ishga tushdi.")
     asyncio.create_task(stats.run(client))
+    if settings.admin_password:
+        import uvicorn
+
+        from .web import create_app
+
+        config = uvicorn.Config(create_app(pipeline), host=settings.web_host, port=settings.web_port, log_level="warning")
+        asyncio.create_task(uvicorn.Server(config).serve())
+        log.info("Admin panel: http://%s:%s", settings.web_host, settings.web_port)
+    else:
+        log.warning("ADMIN_PASSWORD yo'q: veb admin panel o'chirilgan")
     await client.run_until_disconnected()
 
 

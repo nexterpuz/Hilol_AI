@@ -51,6 +51,16 @@ class Pipeline:
         self.notifier = notifier  # AdminBot yoki None
         self.premium = premium
 
+    async def check_target(self, username: str) -> str:
+        """Agent bu kanalda post joylay oladimi? Muammo bo'lsa matnini qaytaradi."""
+        try:
+            perms = await self.client.get_permissions(username, "me")
+        except Exception as e:
+            return f"Kanal tekshirilmadi (@{username}): {e}"
+        if not (perms.is_admin and perms.post_messages):
+            return f"Agent akkaunti @{username} kanalida post joylash huquqiga ega admin emas."
+        return ""
+
     # ---------- yangi post ----------
 
     async def on_new(self, msgs: list) -> None:

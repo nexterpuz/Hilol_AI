@@ -15,6 +15,7 @@ yangilanadi yoki o'chiriladi.
 | `app/textops.py` | Matnni kesish va shablon qo'shish (formatlash saqlanadi) |
 | `app/adminbot.py` | Adminga hisobot va tasdiq tugmalari |
 | `app/stats.py` | Obunachilar va ko'rishlar sonini soatiga bir marta yozib borish |
+| `app/web.py`, `app/templates/` | Veb admin panel: dashboard, kanallar, tasdiq navbati, AI qoidalari |
 | `app/db.py` | Baza jadvallari |
 | `seed.json` | Manba kanal, filial kanallari, shablonlar, qoidalar (birinchi ishga tushirish uchun) |
 
@@ -35,8 +36,19 @@ Lokal sinov (Docker'siz, SQLite bilan): `pip install -r requirements.txt && pyth
 
 Testlar: `pip install pytest && python -m pytest tests`
 
+## Admin panel
+
+Panel xavfsizlik uchun faqat serverning ichki manzilida (`127.0.0.1:8080`) ochiladi.
+O'z kompyuteringizdan kirish uchun SSH tunnel oching va brauzerda
+`http://localhost:8080` ga kiring:
+
+    ssh -L 8080:127.0.0.1:8080 root@SERVER_IP
+
+Login va parol `.env` dagi `ADMIN_USER` va `ADMIN_PASSWORD`. Domen ulanganda panelni
+HTTPS orqali ochiq manzilga chiqarish mumkin (`COOKIE_SECURE=1` bilan).
+
 ## Hozircha yo'q
 
-- Veb admin panel (kanallar hozircha `seed.json` va baza orqali boshqariladi).
+- Panelda Telegram akkauntni almashtirish va integratsiyalar sahifasi (akkaunt hozircha `.env` dagi `TG_SESSION_STRING` orqali almashtiriladi).
 - Manbada media almashtirilgan tahrirni sinxronlash (faqat matn tahriri sinxronlanadi).
 - Instagram va boshqa platformalar.

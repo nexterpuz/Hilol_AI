@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% macro n(v, suffix="") %}{% if v is none %}—{% else %}{{ "{:,}".format(v).replace(",", " ") }}{{ suffix }}{% endif %}{% endmacro %}
+{% macro signed(v) %}{% if v is none %}—{% elif v > 0 %}+{{ v }}{% else %}{{ v }}{% endif %}{% endmacro %}
+{% block main %}
+<div class="row between">
+<h1>Umumiy ko'rinish</h1>
+<div class="row">
+{% for d in (7, 30, 90) %}<a class="btn {{ 'primary' if d == days }}" href="/?days={{ d }}">{{ d }} kun</a>{% endfor %}
+</div>
+</div>
+<div class="grid">
+<div class="card kpi"><div class="muted">Jami obunachilar</div><div class="v">{{ n(total_subs) }}</div><div class="muted">{{ days }} kunda {{ signed(total_growth) }}</div></div>
+<div class="card kpi"><div class="muted">Ko'chirilgan postlar</div><div class="v">{{ n(total_posts) }}</div><div class="muted">oxirgi {{ days }} kun</div></div>
+<div class="card kpi"><div class="muted">O'rtacha qamrov</div><div class="v">{{ n(avg_reach, "%") }}</div><div class="muted">ko'rishlar ÷ obunachilar</div></div>
+<div class="card kpi"><div class="muted">Tasdiq kutmoqda</div><div class="v">{{ pending }}</div><div class="muted">tahrir: {{ edited }} · o'chirish: {{ deleted }}</div></div>
+</div>
+<section class="card">
+<h2>Obunachilar o'sishi — barcha kanallar</h2>
+{% if points %}
+<svg viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Obunachilar soni: {{ series[0] }} dan {{ series[-1] }} gacha" style="width:100%;height:220px">
+<line x1="0" y1="199" x2="600" y2="199" stroke="#C9CED6"/>
+<polyline points="{{ points }}" fill="none" stroke="#1D4ED8" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+</svg>
+<div class="row between muted"><span>{{ labels[0] }}: {{ n(series[0]) }}</span><span>{{ labels[-1] }}: {{ n(series[-1]) }}</span></div>
+{% else %}
+<div class="muted">Grafik uchun kamida ikki kunlik ma'lumot kerak. Statistika soatiga bir marta yig'iladi.</div>
+{% endif %}
+</section>
+<section class="card">
+<h2>Kanallar bo'yicha</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Kanal</th><th class="num">Obunachi</th><th class="num">O'sish</th><th class="num">Postlar</th><th class="num">O'rtacha ko'rish</th><th class="num">Qamrov</th><th>Rejim</th><th>Holat</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr>
+<td><a href="/channels/{{ r.t.id }}"><strong>{{ r.t.name }}</strong></a></td>
+<td class="num">{{ n(r.subs) }}</td>
+<td class="num">{{ signed(r.growth) }}</td>
+<td class="num">{{ r.posts }}</td>
+<td class="num">{{ n(r.views) }}</td>
+<td class="num">{{ n(r.reach, "%") }}</td>
+<td>{{ modes[r.t.mode] }}</td>
+<td>{% if r.t.active %}<span class="ok">Faol</span>{% else %}<span class="muted">To'xtatilgan</span>{% endif %}</td>
+</tr>
+{% else %}
+<tr><td colspan="8" class="muted">Hali kanal qo'shilmagan.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+{% endblock %}
