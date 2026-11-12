@@ -1,0 +1,22 @@
+{
+  "source": "hilol_asosiy_teest",
+  "targets": [
+    {
+      "name": "Qo'qon filiali (test)",
+      "username": "Hilol_qoqon_test",
+      "mode": "smart",
+      "keywords": "Qo'qon",
+      "template_html": "Buyurtma berish uchun\n🤙 +998-90-939-29-27\n👤 @Hilol_qoqon\n📍 Manzil: <a href=\"https://maps.app.goo.gl/bEUsrGdnESXebcKj9\">Qoʻqon shahri, Imom Buxoriy koʻchasi, 1-uy</a>\n✈️ @Hilol_qoqon_test"
+    },
+    {
+      "name": "Marg'ilon filiali (test)",
+      "username": "Hilol_margilon_test",
+      "mode": "smart",
+      "keywords": "Marg'ilon, Margilon",
+      "template_html": "Buyurtma berish uchun\n🤙 +998-90-939-29-27\n👤 @Hilol_qoqon\n📍 Manzil: <a href=\"https://maps.app.goo.gl/bEUsrGdnESXebcKj9\">Margilon shahar, Imom Buxoriy koʻchasi, 7-uy</a>\n✈️ @Hilol_margilon_test"
+    }
+  ],
+  "rules": [
+    "Faqat bir yoki ikki filialga tegishli yangilik (masalan, \"Toshkent filiali bugun ishlamaydi\") faqat o'sha filial kanaliga yuboriladi, boshqa shaharlarning kanallariga yuborilmaydi."
+  ]
+}
