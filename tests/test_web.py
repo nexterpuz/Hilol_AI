@@ -144,6 +144,10 @@ def test_panel_flow():
     c.post("/account/cancel")
     assert "QR kod orqali kirish" in c.get("/account").text
 
+    # integratsiyalar
+    integ = c.get("/integrations").text
+    assert "Claude API" in integ and "Instagram" in integ and "Ulanmagan" in integ
+
     # qoidalar
     c.post("/rules", data={"text": "Aksiya postlari tasdiqdan keyin"})
     assert "Aksiya postlari" in c.get("/rules").text

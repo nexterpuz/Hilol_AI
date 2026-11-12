@@ -279,6 +279,37 @@ def create_app(agent=None) -> FastAPI:
         await agent.logout()
         return _go("/account")
 
+    # ---------- integratsiyalar ----------
+
+    @app.get("/integrations")
+    async def integrations(request: Request):
+        import os
+
+        st = agent.status if agent else {}
+        connected = [
+            {
+                "name": "Telegram akkaunt", "ok": bool(st.get("connected")), "link": "/account",
+                "role": "Manbani o'qish, postlarni joylash, sinxronlash, analitika",
+                "detail": f"{st.get('name', '')} · manba: @{st.get('source', '')}" if st.get("connected") else st.get("error", "Ulanmagan"),
+            },
+            {
+                "name": "Telegram bot", "ok": bool(getattr(agent, "notifier", None)), "link": "",
+                "role": "Adminga hisobot va tasdiq tugmalari",
+                "detail": f"{len(settings.admin_ids)} ta admin" if getattr(agent, "notifier", None) else "TG_BOT_TOKEN va ADMIN_IDS o'zgaruvchilarini tekshiring",
+            },
+            {
+                "name": "Claude API", "ok": bool(os.environ.get("ANTHROPIC_API_KEY")), "link": "",
+                "role": "Postni tahlil qilish va qaror qabul qilish",
+                "detail": f"Model: {settings.ai_model}" if os.environ.get("ANTHROPIC_API_KEY") else "ANTHROPIC_API_KEY o'rnatilmagan",
+            },
+        ]
+        planned = [
+            {"name": "Instagram", "stage": "Keyingi bosqich", "role": "Post va Reels joylash", "detail": "Biznes akkaunt va unga bog'langan Facebook sahifasi kerak"},
+            {"name": "Facebook sahifa", "stage": "Keyingi bosqich", "role": "Sahifaga post joylash", "detail": "Instagram bilan bitta ulanish orqali ishlaydi"},
+            {"name": "YouTube", "stage": "Rejada", "role": "Shorts va video joylash", "detail": "Google akkaunt orqali ulanadi"},
+        ]
+        return page(request, "integrations.html", items=connected, planned=planned)
+
     # ---------- qoidalar ----------
 
     @app.get("/rules")

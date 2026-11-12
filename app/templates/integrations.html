@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block main %}
+<div><h1>Integratsiyalar</h1><div class="muted">Agent qayerdan o'qiydi, qayerga joylaydi va qaysi xizmatlardan foydalanadi.</div></div>
+<h2>Asosiy ulanishlar</h2>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+{% for i in items %}
+<section class="card">
+<div class="row between"><strong style="font-size:16px">{{ i.name }}</strong>{% if i.ok %}<span class="ok">Ulangan</span>{% else %}<span class="danger">Ulanmagan</span>{% endif %}</div>
+<div class="muted">{{ i.role }}</div>
+<div>{{ i.detail }}</div>
+{% if i.link %}<div><a class="btn" href="{{ i.link }}">Sozlash</a></div>{% endif %}
+</section>
+{% endfor %}
+</div>
+<h2>Keyingi platformalar</h2>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+{% for i in planned %}
+<section class="card">
+<div class="row between"><strong style="font-size:16px">{{ i.name }}</strong><span class="muted">{{ i.stage }}</span></div>
+<div class="muted">{{ i.role }}</div>
+<div>{{ i.detail }}</div>
+</section>
+{% endfor %}
+</div>
+<div class="muted">Har bir platforma alohida modul bo'lib qo'shiladi: kanallar, qoidalar va analitika o'zgarmaydi.</div>
+{% endblock %}

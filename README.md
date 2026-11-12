@@ -63,6 +63,5 @@ HTTPS orqali ochiq manzilga chiqarish mumkin (`COOKIE_SECURE=1` bilan).
 
 ## Hozircha yo'q
 
-- Integratsiyalar sahifasi.
 - Manbada media almashtirilgan tahrirni sinxronlash (faqat matn tahriri sinxronlanadi).
 - Instagram va boshqa platformalar.

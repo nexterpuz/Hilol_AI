@@ -47,6 +47,7 @@ form.inline{display:inline}
 <a href="/channels" class="{{ 'on' if path.startswith('/channels') }}">Kanallar</a>
 <a href="/queue" class="{{ 'on' if path == '/queue' }}">Tasdiq navbati</a>
 <a href="/account" class="{{ 'on' if path == '/account' }}">Telegram akkaunt{% if not connected %} <span class="badge">!</span>{% endif %}</a>
+<a href="/integrations" class="{{ 'on' if path == '/integrations' }}">Integratsiyalar</a>
 <a href="/rules" class="{{ 'on' if path == '/rules' }}">AI qoidalari</a>
 <form method="post" action="/logout"><button type="submit">Chiqish</button></form>
 </nav>
