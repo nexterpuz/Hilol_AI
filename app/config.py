@@ -42,6 +42,9 @@ class Settings:
     cookie_secure: bool = os.environ.get("COOKIE_SECURE", "1" if _ON_PAAS else "0") == "1"
     web_host: str = os.environ.get("WEB_HOST", "0.0.0.0" if _ON_PAAS else "127.0.0.1")
     web_port: int = int(os.environ.get("PORT") or os.environ.get("WEB_PORT", "8080"))
+    # Qayta deployda eski nusxa o'chib ulgurishi uchun Telegram'ga ulanishdan oldingi kutish.
+    # Bitta sessiya bir vaqtda ikki joydan ulansa, Telegram uni bekor qiladi.
+    start_delay_sec: int = int(os.environ.get("START_DELAY_SEC", "30" if _ON_PAAS else "0"))
     stats_interval_sec: int = int(os.environ.get("STATS_INTERVAL_SEC", "3600"))
 
 

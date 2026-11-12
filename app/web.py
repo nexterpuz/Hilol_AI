@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
@@ -82,8 +83,14 @@ def svg_points(series: list[int], w: int = 600, h: int = 200) -> str:
     return " ".join(f"{i * step:.1f},{h - 10 - (v - lo) / span * (h - 20):.1f}" for i, v in enumerate(series))
 
 
-def create_app(agent=None) -> FastAPI:
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+def create_app(agent=None, on_shutdown=None) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(_app):
+        yield
+        if on_shutdown:
+            await on_shutdown()  # server to'xtayotganda (SIGTERM) chaqiriladi
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     @app.middleware("http")
     async def auth(request: Request, call_next):
         if request.url.path != "/login" and not request.session.get("user"):

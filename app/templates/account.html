@@ -15,6 +15,7 @@
 <button class="btn danger" type="submit"><span class="danger">Sessiyani uzish</span></button>
 </form>
 {% else %}
+{% if status.starting %}<meta http-equiv="refresh" content="5">{% endif %}
 <div class="note warn">{{ status.error or "Telegram akkaunt ulanmagan." }}</div>
 {% endif %}
 </section>

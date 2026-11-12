@@ -53,20 +53,24 @@ async def main() -> None:
         log.warning("TG_BOT_TOKEN yoki ADMIN_IDS yo'q: Telegram orqali tasdiq va hisobotlar ishlamaydi")
 
     agent = Agent(source_username, notifier)
-    await agent.start_from_storage()
-    if agent.status["connected"]:
-        if notifier:
-            await notifier.say("Agent ishga tushdi.")
-    else:
-        log.warning("Agent kutish holatida: %s", agent.status["error"])
+    starter = asyncio.create_task(agent.start_delayed(settings.start_delay_sec))
 
     if not settings.admin_password:
         log.warning("ADMIN_PASSWORD yo'q: veb admin panel o'chirilgan")
+        await starter
         await asyncio.Event().wait()
     if not settings.secret_from_env:
         log.warning("SECRET_KEY yo'q: panel sessiyalari va akkauntga kirish qayta ishga tushganda yo'qoladi")
+    async def shutdown() -> None:
+        # SIGTERM kelganda uvicorn shu funksiyani chaqiradi: sessiyani darhol bo'shatamiz,
+        # yangi nusxa bilan to'qnashmasin
+        starter.cancel()
+        await agent.stop()
+        log.info("Agent to'xtatildi")
+
+    app = create_app(agent, on_shutdown=shutdown)
     config = uvicorn.Config(
-        create_app(agent), host=settings.web_host, port=settings.web_port,
+        app, host=settings.web_host, port=settings.web_port,
         log_level="warning", proxy_headers=True, forwarded_allow_ips="*",
     )
     log.info("Admin panel: %s:%s", settings.web_host, settings.web_port)

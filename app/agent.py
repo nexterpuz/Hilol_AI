@@ -58,9 +58,51 @@ class Agent:
         self.pipeline: Pipeline | None = None
         self.status: dict = {"connected": False, "error": ""}
         self._stats_task: asyncio.Task | None = None
+        self._watch_task: asyncio.Task | None = None
         self._login: dict | None = None  # panel orqali kirish jarayoni
 
     # ---------- ishga tushirish / to'xtatish ----------
+
+    async def start_delayed(self, delay: int) -> None:
+        """Ishga tushishdan oldin kutadi: eski nusxa sessiyani bo'shatib ulgurishi kerak."""
+        if delay:
+            self.status = {"connected": False, "error": f"Ishga tushmoqda… ({delay} soniya kutilmoqda)", "starting": True}
+            await asyncio.sleep(delay)
+        await self.start_from_storage()
+        if self.notifier:
+            if self.status["connected"]:
+                await self.notifier.say("Agent ishga tushdi.")
+            else:
+                await self.notifier.say(f"Agent ishga tushmadi: {self.status['error']}")
+
+    async def _lost(self, reason: str) -> None:
+        """Sessiya yo'qoldi: holatni yangilaydi va adminga xabar beradi."""
+        log.error("Telegram sessiyasi yo'qoldi: %s", reason)
+        self.status = {"connected": False, "error": reason}
+        await db_log("account_lost", reason)
+        if self.notifier:
+            await self.notifier.say(f"DIQQAT: agent Telegram akkauntdan uzildi. {reason} Panelda qayta kiring.")
+
+    async def _watch(self, client: TelegramClient) -> None:
+        """Har daqiqada sessiya tirikligini tekshiradi."""
+        while True:
+            await asyncio.sleep(60)
+            try:
+                if not client.is_connected():
+                    await client.connect()
+                alive = await client.is_user_authorized()
+            except (errors.AuthKeyDuplicatedError, errors.AuthKeyUnregisteredError, errors.UserDeactivatedError):
+                alive = False
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.warning("Sessiyani tekshirib bo'lmadi (tarmoq?), keyinroq urinib ko'riladi", exc_info=True)
+                continue
+            if not alive and client is self.client:
+                self._watch_task = None  # o'zini bekor qilmasligi uchun
+                await self.stop()
+                await self._lost("Sessiya Telegram tomonidan bekor qilingan (boshqa qurilmadan tugatilgan yoki bir vaqtda ikki joydan ulangan).")
+                return
 
     async def start_from_storage(self) -> None:
         """Bazadagi faol akkaunt, bo'lmasa .env dagi TG_SESSION_STRING bilan ishga tushadi."""
@@ -87,6 +129,10 @@ class Agent:
                 return
             me = await client.get_me()
             source = await client.get_entity(self.source_username)
+        except (errors.AuthKeyDuplicatedError, errors.AuthKeyUnregisteredError):
+            await client.disconnect()
+            self.status = {"connected": False, "error": "Sessiya Telegram tomonidan bekor qilingan. Akkauntga qayta kiring."}
+            return
         except Exception as e:
             log.exception("Telegram'ga ulanib bo'lmadi")
             await client.disconnect()
@@ -116,6 +162,7 @@ class Agent:
         if self.notifier:
             self.notifier.pipeline = pipeline
         self._stats_task = asyncio.create_task(stats.run(client))
+        self._watch_task = asyncio.create_task(self._watch(client))
         name = " ".join(x for x in (me.first_name, me.last_name) if x)
         self.status = {
             "connected": True, "error": "", "name": name, "username": me.username or "",
@@ -126,9 +173,10 @@ class Agent:
         await db_log("account_started", name)
 
     async def stop(self) -> None:
-        if self._stats_task:
-            self._stats_task.cancel()
-            self._stats_task = None
+        for task in (self._stats_task, self._watch_task):
+            if task and task is not asyncio.current_task():
+                task.cancel()
+        self._stats_task = self._watch_task = None
         if self.client:
             await self.client.disconnect()
         self.client = self.pipeline = None
