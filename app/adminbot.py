@@ -22,17 +22,20 @@ BTN_STOP, BTN_RESUME = "⏸ To'xtatish", "▶️ Davom ettirish"
 BTN_MANAGERS = "👥 Menejerlar"
 BTN_MESSAGE = "✉️ Xabar yuborish"
 BTN_SUGGEST = "💡 Taklif yuborish"
+BTN_RATING = "🏆 Reyting"
 MESSAGE_HEAD = "📢 Bosh admindan xabar:\n\n"
 ALIASES = {
     BTN_WEEK.lower(): "/hisobot", BTN_MONTH.lower(): "/hisobot_oy", BTN_QUEUE.lower(): "/navbat",
     BTN_STATE.lower(): "/holat", BTN_STOP.lower(): "/stop", BTN_RESUME.lower(): "/resume",
-    BTN_MANAGERS.lower(): "/menejerlar", BTN_MESSAGE.lower(): "/xabar", BTN_SUGGEST.lower(): "/taklif",
+    BTN_MANAGERS.lower(): "/menejerlar", BTN_MESSAGE.lower(): "/xabar", BTN_SUGGEST.lower(): "/taklif", BTN_RATING.lower(): "/reyting",
 }
 
 
 def keyboard(is_admin: bool, is_manager: bool, paused: bool = False):
     """Foydalanuvchi roliga mos pastki tugmalar."""
     rows = [[Button.text(BTN_WEEK, resize=True), Button.text(BTN_MONTH)]]
+    if is_manager:
+        rows.append([Button.text(BTN_RATING)])
     second = []
     if is_manager:
         second.append(Button.text(BTN_QUEUE))
@@ -286,7 +289,7 @@ class AdminBot:
         await event.respond(
             f"Tasdiqlandi. Siz bog'langan filial: {names}.\n"
             "Endi yangi nashr va «tez kunda» postlari sizga keladi: kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosasiz.\n"
-            "Har yakshanba va oy oxirida soat 18:00 da filialingiz hisoboti keladi.\n"
+            "Har kuni soat 18:00 da filialingiz reytingi, har yakshanba va oy oxirida hisoboti keladi.\n"
             "Pastdagi tugmalar orqali hisobotni va kutayotgan postlarni istagan payt ko'rasiz.",
             buttons=keyboard(event.sender_id in settings.admin_ids, True, await is_paused()),
         )
@@ -332,6 +335,10 @@ class AdminBot:
         elif is_admin and text in ("/resume", "/davom"):
             await set_paused(False)
             await event.respond("Agent davom ettirildi. To'xtatilgan paytda to'plangan postlar Tasdiq navbatida turibdi.", buttons=await kb())
+        elif mine and text == "/reyting":
+            from . import reports
+
+            await reports.send_ratings(self, only_user=uid)
         elif mine and text == "/taklif":
             self._suggest.add(uid)
             await event.respond("Taklif yoki fikringizni yozib yuboring (rasm ham bo'ladi) — u bosh adminga yetkaziladi.\nBekor qilish: /bekor")

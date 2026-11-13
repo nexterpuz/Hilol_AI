@@ -83,9 +83,9 @@ def test_bot_keyboard_and_button_presses(monkeypatch):
     def labels(rows):
         return [b.button.text for row in rows for b in row]
 
-    assert labels(keyboard(False, True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, adminbot.BTN_SUGGEST]
+    assert labels(keyboard(False, True)) == [BTN_WEEK, BTN_MONTH, adminbot.BTN_RATING, BTN_QUEUE, adminbot.BTN_SUGGEST]
     assert labels(keyboard(True, False)) == [BTN_WEEK, BTN_MONTH, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
-    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, adminbot.BTN_SUGGEST, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
+    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, adminbot.BTN_RATING, BTN_QUEUE, adminbot.BTN_SUGGEST, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
 
     class Ev:
         def __init__(self, sender, text):
@@ -314,3 +314,70 @@ def test_manager_suggestion_and_admin_reply():
     assert "Kimga: menejer (1 kishi)" in click.out[0]
     assert sent[1][:2] == (["6001"], MESSAGE_HEAD + "Rahmat, keyingi hafta yuboramiz") and "1 / 1" in reply.out[0]
     assert not bot._compose and not bot._suggest
+
+
+def test_rating_text_and_grades():
+    rk = {"total": 20, "average": 38.0, "ranks": {5: {"rank": 9, "reach": 42, "name": "Qo'qon"}, 6: {"rank": 15, "reach": 33, "name": "B"}, 7: {"rank": 20, "reach": 12, "name": "C"}}}
+    text = reports.rating_text(5, rk, {"5": 8})
+    assert text.startswith("🏆 Reyting: 9-o'rin (20 ta filial ichida), kechaga nisbatan ↓1\n🎯 Baho: 🟢 yaxshi\n📈 Qamrov: 42% (filiallar o'rtachasi 38%)")
+    assert "kechaga nisbatan ↑3" in reports.rating_text(6, rk, {"6": 18}) and "🟡 o'rtacha" in reports.rating_text(6, rk, None)
+    assert "🔴 e'tibor kerak" in reports.rating_text(7, rk, {"7": 20}) and "o'zgarmadi" in reports.rating_text(7, rk, {"7": 20})
+    assert "kechagi ma'lumot yo'q" in reports.rating_text(5, rk, None)
+    assert "hali hisoblanmadi" in reports.rating_text(99, rk, None)
+    assert reports.rating_text(5, rk, None, with_name=True).startswith("Qo'qon\n🏆")
+    assert reports.previous_ranks({"2026-11-12": {"5": 3}, "2026-11-13": {"5": 4}, "2026-11-14": {"5": 9}}, "2026-11-14") == {"5": 4}
+    assert reports.previous_ranks({"2026-11-14": {"5": 9}}, "2026-11-14") is None
+
+
+def test_daily_rating_flow(monkeypatch):
+    """Kunlik reyting faqat menejerlarga boradi, o'rinlar tarixga yoziladi va ertasi kuni solishtiriladi."""
+    from sqlalchemy import update
+
+    state = {"reach": {}}
+
+    async def fake_compare(days):
+        return {"channels": [{"id": i, "name": n, "active": True, "reach": r, "growth_pct": 0} for i, (n, r) in state["reach"].items()]}
+
+    import app.web as web
+
+    monkeypatch.setattr(web, "compare_data", fake_compare)
+
+    class Bot:
+        def __init__(self):
+            self.msgs = []
+
+        async def send(self, users, text, buttons=None):
+            self.msgs.append((list(users), text))
+            return len(list(users))
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            a = Target(name="R-A", username="rate_a", manager_ids={"5101": "1"})
+            b = Target(name="R-B", username="rate_b", manager_ids={"5102": "2"})
+            c = Target(name="R-C", username="rate_c")
+            s.add_all([a, b, c])
+            await s.commit()
+            ids = (a.id, b.id, c.id)
+        await reports._set("rank_history", "")
+        bot = Bot()
+        state["reach"] = {ids[0]: ("R-A", 50), ids[1]: ("R-B", 40), ids[2]: ("R-C", 30)}
+        day1 = datetime(2026, 11, 13, 18, 0, tzinfo=T)
+        n1 = await reports.send_ratings(bot, day1, store=True)
+        state["reach"] = {ids[0]: ("R-A", 35), ids[1]: ("R-B", 45), ids[2]: ("R-C", 30)}  # A pastga, B yuqoriga
+        day2 = datetime(2026, 11, 14, 18, 0, tzinfo=T)
+        await reports.send_ratings(bot, day2, store=True)
+        press = Bot()
+        await reports.send_ratings(press, day2, only_user=5101)  # tugma bosilganda faqat o'ziga, tarix o'zgarmaydi
+        return bot.msgs, press.msgs, n1
+
+    msgs, press, n1 = asyncio.run(run())
+    assert n1 == 2 and {tuple(u) for u, _ in msgs} == {("5101",), ("5102",)}  # bosh adminga yuborilmaydi
+    first_a = next(t for u, t in msgs[:2] if u == ["5101"])
+    assert "1-o'rin (3 ta filial ichida), kechagi ma'lumot yo'q" in first_a
+    second_a = next(t for u, t in msgs[2:] if u == ["5101"])
+    second_b = next(t for u, t in msgs[2:] if u == ["5102"])
+    assert "2-o'rin (3 ta filial ichida), kechaga nisbatan ↓1" in second_a
+    assert "1-o'rin (3 ta filial ichida), kechaga nisbatan ↑1" in second_b
+    assert len(press) == 1 and press[0][0] == ["5101"] and "kechaga nisbatan ↓1" in press[0][1]

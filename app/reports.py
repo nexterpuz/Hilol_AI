@@ -266,6 +266,98 @@ async def send_reports(notifier, kind: str, now_local: datetime | None = None, o
     return sent
 
 
+# ---------- kunlik reyting ----------
+
+def grade(reach: float, average: float) -> str:
+    """Baho: filial qamrovi barcha filiallar o'rtachasiga nisbatan."""
+    if average <= 0 or reach >= average:
+        return "🟢 yaxshi"
+    if reach >= average * 0.8:
+        return "🟡 o'rtacha"
+    return "🔴 e'tibor kerak"
+
+
+def change_label(rank: int, previous: int | None) -> str:
+    if previous is None:
+        return "kechagi ma'lumot yo'q"
+    if previous == rank:
+        return "kechaga nisbatan o'zgarmadi"
+    return f"kechaga nisbatan {'↑' if rank < previous else '↓'}{abs(previous - rank)}"
+
+
+async def ranking() -> dict:
+    """Filiallar reytingi: oxirgi 7 kundagi postlarning o'rtacha qamrovi bo'yicha (teng bo'lsa — o'sish foizi)."""
+    from .web import compare_data
+
+    data = await compare_data(7)
+    rated = [c for c in data["channels"] if c["active"] and c["reach"] is not None]
+    rated.sort(key=lambda c: (c["reach"], c["growth_pct"] or 0), reverse=True)
+    average = sum(c["reach"] for c in rated) / len(rated) if rated else 0
+    return {
+        "total": len(rated), "average": average,
+        "ranks": {c["id"]: {"rank": i + 1, "reach": c["reach"], "name": c["name"]} for i, c in enumerate(rated)},
+    }
+
+
+def rating_text(target_id: int, rk: dict, previous: dict | None, with_name: bool = False) -> str:
+    mine = rk["ranks"].get(target_id)
+    if mine is None:
+        return "🏆 Reyting: hali hisoblanmadi.\nReyting uchun filial kanalida oxirgi 7 kunda chiqqan postlarning ko'rishlar soni kerak."
+    prev = (previous or {}).get(str(target_id))
+    head = f"{mine['name']}\n" if with_name else ""
+    return (
+        f"{head}🏆 Reyting: {mine['rank']}-o'rin ({rk['total']} ta filial ichida), {change_label(mine['rank'], prev)}\n"
+        f"🎯 Baho: {grade(mine['reach'], rk['average'])}\n"
+        f"📈 Qamrov: {mine['reach']}% (filiallar o'rtachasi {round(rk['average'])}%)\n\n"
+        "Reyting oxirgi 7 kundagi postlarning o'rtacha qamrovi (ko'rishlar ÷ obunachilar) bo'yicha hisoblanadi."
+    )
+
+
+async def _history() -> dict:
+    import json
+
+    raw = await _get("rank_history")
+    try:
+        return json.loads(raw) if raw else {}
+    except ValueError:
+        return {}
+
+
+def previous_ranks(history: dict, today: str) -> dict | None:
+    """Bugundan oldingi eng so'nggi kunning o'rinlari."""
+    days = sorted(d for d in history if d < today)
+    return history[days[-1]] if days else None
+
+
+async def send_ratings(notifier, now_local: datetime | None = None, only_user: int | None = None, store: bool = False) -> int:
+    """Menejerlarga o'z filiali reytingini yuboradi. store=True — bugungi o'rinlar tarixga yoziladi."""
+    import json
+
+    now_local = now_local or datetime.now(TASHKENT)
+    today = now_local.date().isoformat()
+    rk, history = await ranking(), await _history()
+    previous = previous_ranks(history, today)
+    if store:
+        history[today] = {str(tid): v["rank"] for tid, v in rk["ranks"].items()}
+        for old in sorted(history)[:-14]:  # ikki haftalik tarix yetarli
+            del history[old]
+        await _set("rank_history", json.dumps(history))
+    async with Session() as s:
+        targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
+    per_user: dict = {}
+    for t in targets:
+        for uid in t.manager_ids or {}:
+            if only_user is None or int(uid) == only_user:
+                per_user.setdefault(uid, []).append(t)
+    sent = 0
+    for uid, mine in per_user.items():
+        for t in mine:
+            sent += await notifier.send([uid], rating_text(t.id, rk, previous, with_name=len(mine) > 1))
+    if store:
+        await db_log("rating_sent", f"{sent} ta xabar")
+    return sent
+
+
 async def _get(key: str) -> str:
     async with Session() as s:
         row = await s.get(Setting, key)
@@ -294,6 +386,10 @@ async def run(notifier) -> None:
                 else:
                     await _set("report_monthly_last", now_local.date().isoformat()[:7])
                 await send_reports(notifier, kind, now_local)
+            # kunlik reyting: har kuni 18:00 da faqat menejerlarga
+            if now_local.hour >= 18 and await _get("rating_last") != now_local.date().isoformat():
+                await _set("rating_last", now_local.date().isoformat())
+                await send_ratings(notifier, now_local, store=True)
         except asyncio.CancelledError:
             raise
         except Exception:
