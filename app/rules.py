@@ -20,6 +20,41 @@ URL = re.compile(r"https?://|t\.me/|www\.", re.I)
 MENTION_ONLY = re.compile(r"^[\W_]*(@\w+[\W_]*)+$")
 
 
+# Filial shaharlari: har bir guruh — bitta shaharning turli yozilishi (kirill va lotin)
+CITY_GROUPS = (
+    ("тошкент", "toshkent", "tashkent"), ("наманган", "namangan"), ("андижон", "andijon", "andijan"),
+    ("фарғона", "farg'ona", "farg‘ona", "fargona", "fergana"), ("қўқон", "қуқон", "qo'qon", "qo‘qon", "qoqon", "kokand"),
+    ("марғилон", "marg'ilon", "marg‘ilon", "margilon"), ("самарқанд", "samarqand", "samarkand"),
+    ("бухоро", "buxoro", "bukhara"), ("термиз", "termiz"), ("нукус", "nukus"), ("урганч", "urganch"),
+    ("хива", "xiva"), ("жиззах", "jizzax"), ("гулистон", "guliston"), ("чирчиқ", "chirchiq"),
+    ("олмалиқ", "olmaliq"), ("ангрен", "angren"), ("шаҳрисабз", "shahrisabz"), ("денов", "denov"),
+    ("асака", "asaka"),
+)
+STORE_WORDS = ("дўкон", "дукон", "do'kon", "do‘kon", "dokon", "филиал", "filial")
+HEAD_STORE = ("бош дўкон", "бош дукон", "bosh do'kon", "bosh do‘kon", "bosh dokon")
+
+
+def local_groups(body: str) -> tuple[set[int], bool]:
+    """Postda qaysi shaharlarning do'koni tilga olingan va bosh do'kon tilga olinganmi.
+
+    Shahar faqat do'kon/filial so'zi bilan bitta qatorda kelsa hisobga olinadi: kitob
+    tavsifidagi "Toshkent" yoki "Buxoro" kabi so'zlar noto'g'ri ishlab ketmasligi uchun.
+    """
+    groups, head = set(), False
+    for line in body.lower().split("\n"):
+        if any(h in line for h in HEAD_STORE):
+            head = True
+        if any(w in line for w in STORE_WORDS):
+            groups |= {i for i, names in enumerate(CITY_GROUPS) if any(n in line for n in names)}
+    return groups, head
+
+
+def target_groups(target) -> set[int]:
+    """Filial kanali qaysi shahar(lar)ga tegishli: nomi va kalit so'zlari bo'yicha."""
+    own = f"{getattr(target, 'name', '') or ''}, {target.keywords or ''}".lower()
+    return {i for i, names in enumerate(CITY_GROUPS) if any(n in own for n in names)}
+
+
 def _kind(line: str) -> str | None:
     """Qator turi: 'blank', 'mention' (faqat @username), 'contact' yoki None (oddiy mazmun)."""
     stripped = line.strip()
@@ -64,13 +99,16 @@ def analyze(text: str, targets: list) -> Analysis:
         words = [w.strip().lower() for w in (t.keywords or "").split(",") if w.strip()]
         return any(w in body for w in words)
 
-    named = {t.id for t in targets if mentioned(t)}
+    cities, head = local_groups(body)
+    named = {t.id for t in targets if mentioned(t) or (cities & target_groups(t))}
+    is_local = bool(named or cities or head)
     decisions = []
     for t in targets:
-        if not named:
+        if not is_local:
             decisions.append(TargetDecision(target_id=t.id, send=True, confidence=base, reason="Qolipga mos umumiy post" if base >= 0.8 else "Post qolipga mos emas"))
         elif t.id in named:
             decisions.append(TargetDecision(target_id=t.id, send=True, confidence=base, reason="Postda shu filial tilga olingan"))
         else:
-            decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.6, reason="Postda boshqa filial tilga olingan"))
+            why = "Postda boshqa filial do'koni tilga olingan" if (cities or named) else "Post bosh do'konga tegishli"
+            decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.6, reason=why))
     return Analysis(block_type=block_type, cta_start_line=start, decisions=decisions)

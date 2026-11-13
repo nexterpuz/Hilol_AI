@@ -201,7 +201,10 @@ def test_panel_flow():
 
     # qoidalar
     c.post("/rules", data={"text": "Aksiya postlari tasdiqdan keyin"})
-    assert "Aksiya postlari" in c.get("/rules").text
+    rules_page = c.get("/rules").text
+    assert "Aksiya postlari" in rules_page and "вакансия" in rules_page
+    c.post("/rules/ask-words", data={"words": "tanlov ,  konkurs,,"})
+    assert 'value="tanlov, konkurs"' in c.get("/rules").text
 
     # o'chirish bog'liq yozuvlar bilan birga ishlaydi
     c.post(f"/channels/{target_id}/delete")

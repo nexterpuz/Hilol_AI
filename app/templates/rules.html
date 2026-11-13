@@ -1,8 +1,20 @@
 {% extends "base.html" %}
 {% block main %}
-<h1>AI qoidalari va istisnolar</h1>
+<h1>Qoidalar va istisnolar</h1>
+{% if saved %}<div class="note ok" role="status">{{ saved }}</div>{% endif %}
 <section class="card">
-<div class="muted">Agent har bir postni shu qoidalar bo'yicha tekshiradi. Yangi qoidani oddiy til bilan yozing.</div>
+<h2>Tasdiq talab qiladigan so'zlar</h2>
+<div class="muted">Post matnida shu so'zlardan biri uchrasa, u avtomatik chiqmaydi — sizdan so'raladi. AI ishlasa ham, ishlamasa ham amal qiladi. So'zlarni vergul bilan ajrating; katta-kichik harf farq qilmaydi.</div>
+<form method="post" action="/rules/ask-words">
+<label for="words">So'zlar</label>
+<div class="row"><input id="words" name="words" type="text" value="{{ ask_words }}" style="flex:1 1 260px" placeholder="вакансия, ариза юбориш">
+<button class="btn primary" type="submit">Saqlash</button></div>
+</form>
+<div class="muted">Bundan tashqari, postda biror shahar nomi «do'kon» yoki «filial» so'zi bilan bitta qatorda kelsa (masalan «Намангандаги дўконимиз ишламайди») yoki «бош дўкон» tilga olinsa, post faqat o'sha filial kanaliga chiqadi, qolganlari uchun sizdan so'raladi.</div>
+</section>
+<section class="card">
+<h2>Oddiy tildagi qoidalar (faqat AI ishlaganda)</h2>
+<div class="muted">Bu qoidalarni Claude o'qiydi. AI ishlamay turganda ular hisobga olinmaydi.</div>
 {% for r in rules %}
 <div class="note row between">
 <span style="flex:1 1 240px">{{ r.text }}</span>

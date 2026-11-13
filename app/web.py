@@ -16,7 +16,7 @@ from sqlalchemy import delete, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import EPHEMERAL_DB, settings
-from .db import Decision, Delivery, Event, Rule, Session, SourcePost, StatChannel, StatPost, Target, now
+from .db import Decision, Delivery, Event, Setting, Rule, Session, SourcePost, StatChannel, StatPost, Target, now
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 MODES = {"auto": "Avto", "smart": "Aqlli", "manual": "Qo'lda"}
@@ -602,7 +602,26 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
     async def rules(request: Request):
         async with Session() as s:
             items = list((await s.execute(select(Rule).order_by(Rule.id))).scalars())
-        return page(request, "rules.html", rules=items)
+            row = await s.get(Setting, "ask_words")
+        from .pipeline import DEFAULT_ASK_WORDS
+
+        return page(
+            request, "rules.html", rules=items, ask_words=row.value if row is not None else DEFAULT_ASK_WORDS,
+            saved=request.session.pop("saved", ""),
+        )
+
+    @app.post("/rules/ask-words")
+    async def ask_words_save(request: Request, words: str = Form("")):
+        clean = ", ".join(w.strip() for w in words.replace("\n", ",").split(",") if w.strip())
+        async with Session() as s:
+            row = await s.get(Setting, "ask_words")
+            if row is not None:
+                row.value = clean
+            else:
+                s.add(Setting(key="ask_words", value=clean))
+            await s.commit()
+        request.session["saved"] = "So'zlar saqlandi."
+        return _go("/rules")
 
     @app.post("/rules")
     async def rule_add(text: str = Form("")):

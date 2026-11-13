@@ -73,6 +73,11 @@ async def scenario(monkeypatch):
     await init_db()
     seed = json.load(open("seed.json", encoding="utf-8"))
     async with Session() as s:
+        from sqlalchemy import delete
+
+        from app.db import Setting
+
+        await s.execute(delete(Setting))  # boshqa testlar qoldirgan sozlamalar ta'sir qilmasin
         for t in seed["targets"]:
             s.add(Target(**{**t, "username": "p_" + t["username"]}))
         await s.commit()
@@ -198,6 +203,15 @@ async def scenario(monkeypatch):
     assert len(only(c.sent)) == n
     monkeypatch.setattr(ai, "analyze", fake_analyze)
 
+    # tasdiq talab qiladigan so'z: qolipga mos bo'lsa ham so'raladi
+    store[11] = mk(11, "Jamoamizga taklif qilamiz\nАриза юбориш учун профилга ёзинг\n\n@hilolnashr")
+    n = len(only(c.sent))
+    await p.on_new([store[11]])
+    assert len(only(c.sent)) == n
+    async with Session() as s:
+        d11 = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()))).scalars().first()
+    assert d11.status == "pending" and "ариза юбориш" in d11.reason
+
     # o'chirish
     await p.on_delete(CHAT, [1, 2])
     deleted = only(c.deleted)
@@ -247,3 +261,34 @@ def test_rules_relevance():
     local = fallback.analyze("Qo'qon filialimiz bugun ishlamaydi\n\n@hilolnashr", targets)
     assert local.for_target(1).send and local.for_target(1).confidence >= 0.8
     assert not local.for_target(2).send and local.for_target(2).confidence < 0.8  # admindan so'raladi
+
+
+def test_rules_real_post_shapes():
+    """Haqiqiy kanaldagi post qoliplari: filialga xos e'lon va bosh do'kon tadbiri."""
+    from types import SimpleNamespace as T
+
+    targets = [T(id=1, name="Qo'qon filiali", keywords="Qo'qon"), T(id=2, name="Marg'ilon", keywords=""), T(id=3, name="Namangan do'koni", keywords="")]
+    closed = "✨ Бугун ва эртага Намангандаги дўконимиз ишламайди\n\n⏺ Бошқа дўконларимиз одатдаги тартибда ишлайди.\n\n📍 Манзилларимиз\n\n@hilolnashr"
+    a = fallback.analyze(closed, targets)
+    assert a.for_target(3).send and a.for_target(3).confidence >= 0.8  # Namangan kanaliga chiqadi
+    assert not a.for_target(1).send and a.for_target(1).confidence < 0.8  # qolganlarida so'raladi
+    assert not a.for_target(2).send
+    # kirillcha yozilgan shahar lotincha nomlangan kanalga mos keladi
+    b = fallback.analyze("Қўқондаги дўконимиз янги манзилга кўчди\n\n@hilolnashr", targets)
+    assert b.for_target(1).send and not b.for_target(2).send
+    # bosh do'kondagi tadbir: hech bir filialga avtomatik chiqmaydi
+    event = "Марҳамат, навбатдаги илм мажлисига ташриф буюринг! 😊\n\n📆 17 ноябрь 14:00\n\n📍 «Hilol-Nashr» бош дўкони\n\n@hilolnashr"
+    c = fallback.analyze(event, targets)
+    assert all(not d.send and d.confidence < 0.8 for d in c.decisions)
+    # kitob tavsifidagi shahar nomi va umumiy "do'konlarimizdan" so'zi — oddiy sotuv posti
+    sale = "🔥 Имом Бухорий ҳазратларининг ҳаёти ҳақидаги асар. Муаллиф Тошкентда яшаган.\n📚 Китобни дўконларимиздан сотиб олинг.\n👉 Нархи: 43 000 сўм\n\n📍 Манзилларимиз\n📞 +998712175999\n@hilolnashr"
+    d = fallback.analyze(sale, targets)
+    assert d.block_type == "contact" and all(x.send and x.confidence >= 0.8 for x in d.decisions)
+
+
+def test_ask_words():
+    from app.pipeline import DEFAULT_ASK_WORDS, ask_word_in
+
+    assert ask_word_in("📩Ариза юбориш учун:\n@hilolnashrhr", DEFAULT_ASK_WORDS) == "ариза юбориш"
+    assert ask_word_in("Жума муборак!", DEFAULT_ASK_WORDS) == ""
+    assert ask_word_in("Вакансия", "") == ""

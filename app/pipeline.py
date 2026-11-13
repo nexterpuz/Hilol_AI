@@ -12,7 +12,7 @@ from telethon.tl.types import MessageMediaWebPage
 
 from . import ai, rules as fallback
 from .config import settings
-from .db import Decision, Delivery, Rule, Session, SourcePost, Target, log as db_log, now
+from .db import Decision, Delivery, Rule, Setting, Session, SourcePost, Target, log as db_log, now
 from .textops import build_post, fits, message_to_template, parse_message_link
 
 log = logging.getLogger(__name__)
@@ -38,6 +38,16 @@ def closing_for(target, block_type: str | None) -> str:
     if block_type in (None, "contact"):  # None — bu maydon qo'shilishidan oldingi postlar
         return target.template_html
     return target.signature_html or f"@{target.username}"
+
+
+# Shu so'zlar uchragan post avtomatik chiqmaydi, admindan so'raladi (panelda o'zgartiriladi)
+DEFAULT_ASK_WORDS = "вакансия, vakansiya, ишга таклиф, ариза юбориш"
+
+
+def ask_word_in(text: str, words: str) -> str:
+    """Matnda tasdiq talab qiladigan so'z bormi: topilgan so'z yoki bo'sh satr."""
+    low = (text or "").lower()
+    return next((w for w in (x.strip().lower() for x in words.split(",")) if w and w in low), "")
 
 
 def normalize(text: str) -> str:
@@ -121,6 +131,8 @@ class Pipeline:
             rules = [r.text for r in (await s.execute(select(Rule).where(Rule.active))).scalars()]
 
             memory = list((await s.execute(select(Decision).order_by(Decision.id.desc()).limit(300))).scalars())
+            row = await s.get(Setting, "ask_words")
+            ask_words = row.value if row is not None else DEFAULT_ASK_WORDS
 
         text = cap.message or ""
         by_name = {t.id: t.name for t in targets}
@@ -154,6 +166,9 @@ class Pipeline:
                 action, reason = decide(t.mode, d, settings.confidence_threshold)
                 if by_rules and t.mode != "manual":
                     reason = "AI'siz qoidalar: " + reason.replace("AI ishonchi past", "ishonch past")
+                word = ask_word_in(text, ask_words)
+                if word and action == "send" and t.mode != "manual":
+                    action, reason = "ask", f"Matnda «{word}» so'zi bor: tasdiq kerak"
                 quiet = False
                 past = next((m for m in memory if m.target_id == t.id and similar(m.text, text)), None)
                 if past is not None and t.mode != "manual":
