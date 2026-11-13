@@ -8,7 +8,7 @@
 <thead><tr><th>Vaqti</th><th>Hodisa</th><th>Tafsilot</th></tr></thead>
 <tbody>
 {% for e in items %}
-<tr><td>{{ e.when }}</td><td>{% if e.bad %}<span class="danger">{{ e.label }}</span>{% else %}{{ e.label }}{% endif %}</td><td>{{ e.detail }}</td></tr>
+<tr><td>{{ e.when }}</td><td>{% if e.bad %}<span class="danger">{{ e.label }}</span>{% elif e.warn %}<span class="warn">{{ e.label }}</span>{% else %}{{ e.label }}{% endif %}</td><td>{{ e.detail }}</td></tr>
 {% else %}
 <tr><td colspan="3" class="muted">Hali hodisa yo'q.</td></tr>
 {% endfor %}

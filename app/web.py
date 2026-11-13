@@ -78,7 +78,7 @@ TASHKENT = timezone(timedelta(hours=5))
 EVENT_LABELS = {
     "new_post": "Yangi post", "sent": "Yuborildi", "failed": "Xatolik", "edited": "Tahrir sinxronlandi",
     "deleted": "O'chirish sinxronlandi", "account_started": "Akkaunt ulandi", "account_lost": "Akkaunt uzildi",
-    "source_changed": "Manba o'zgartirildi", "ai_failed": "AI xatosi",
+    "source_changed": "Manba o'zgartirildi", "ai_failed": "AI ishlamadi (zaxira qoidalar)",
 }
 
 
@@ -371,7 +371,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             events = list((await s.execute(select(Event).order_by(Event.id.desc()).limit(200))).scalars())
         items = [
             {"when": local_time(e.created_at), "label": EVENT_LABELS.get(e.kind, e.kind), "detail": e.detail,
-             "bad": e.kind in ("failed", "account_lost", "ai_failed")}
+             "bad": e.kind in ("failed", "account_lost"), "warn": e.kind == "ai_failed"}
             for e in events
         ]
         return page(request, "log.html", items=items)

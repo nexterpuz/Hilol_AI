@@ -108,6 +108,8 @@ async def analyze(text: str, targets: list, rules: list[str], examples: list[str
         return _failed("Anthropic so'rovlar limiti tugadi, birozdan keyin o'zi tiklanadi.")
     except anthropic.APIStatusError as e:
         message = str(getattr(e, "message", e))
+        if "organization has been disabled" in message.lower():
+            return _failed("Anthropic hisobi o'chirilgan. Tiklanmaguncha agent zaxira qoidalar bilan ishlaydi.")
         if "credit balance" in message.lower():
             return _failed("Anthropic hisobida mablag' tugagan. Billing bo'limida balansni to'ldiring.")
         return _failed(f"Anthropic xatosi {e.status_code}: {message[:200]}")

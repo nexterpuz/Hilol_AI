@@ -132,7 +132,7 @@ class Pipeline:
         analysis = await ai.analyze(text, targets, rules, examples) if text else None
         by_rules = False
         if text and analysis is None:
-            await db_log("ai_failed", ai.last_error)
+            await self._log_ai_failure()
             analysis, by_rules = fallback.analyze(text, targets), True  # AI'siz zaxira qoidalar
 
         async with Session() as s:
@@ -179,6 +179,15 @@ class Pipeline:
                 await self.publish(delivery_id)
             elif self.notifier and not quiet:
                 await self.notifier.ask(delivery_id, target, cap.message or "(matnsiz post)", reason, skipped=action == "skip")
+
+    async def _log_ai_failure(self) -> None:
+        """AI xatosini jurnalga yozadi; bir xil xato har postda takrorlanmasligi uchun 6 soatda bir marta."""
+        key, t = ai.last_error, now()
+        last = getattr(self, "_ai_logged", None)
+        if last and last[0] == key and (t - last[1]).total_seconds() < 6 * 3600:
+            return
+        self._ai_logged = (key, t)
+        await db_log("ai_failed", key)
 
     # ---------- joylash ----------
 
