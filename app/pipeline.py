@@ -229,12 +229,10 @@ class Pipeline:
                     action, reason, quiet = ("send" if past.send else "skip"), "Avvalgi qaroringiz bo'yicha", True
                 branch = local = False
                 scope = getattr(d, "scope", "general") if d is not None else "general"
-                if scope == "own" and t.mode != "manual":
-                    # Aynan shu filialga tegishli e'lon: har safar filial menejeridan so'raladi
-                    # (xotiradagi avvalgi qaror ham buni chetlab o'tmaydi)
-                    action, reason, quiet, branch, local = "ask", "Filialga tegishli post: filial tasdig'i kutilmoqda", False, True, True
-                elif scope == "other" and t.mode != "manual":
-                    action, reason, quiet = "skip", "Post boshqa filialga tegishli", True  # so'ralmaydi ham
+                if scope == "other" and t.mode != "manual":
+                    # Boshqa filialning e'loni: bu kanalga chiqmaydi va hech kimdan so'ralmaydi.
+                    # (O'z filialiga tegishli post — scope "own" — odatdagidek avtomatik chiqadi.)
+                    action, reason, quiet = "skip", "Post boshqa filialga tegishli", True
                 elif t.branch_approval and action == "send" and ask_word_in(text, branch_words):
                     # Yangi nashr yoki "tez kunda": kitob filialga kelgach, menejer o'zi tasdiqlaydi
                     action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True

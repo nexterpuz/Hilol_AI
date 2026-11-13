@@ -202,7 +202,7 @@ async def scenario(monkeypatch):
         assert d.status == "sent" and d.reason.startswith("AI'siz qoidalar")
         ev = (await s.execute(select(Event).where(Event.kind == "ai_failed"))).scalars().first()
         assert ev is not None and "mablag' tugagan" in ev.detail  # tafsilot faqat jurnalda
-    # filialga xos e'lon: faqat o'sha filial menejeridan so'raladi, boshqalar jim o'tkazib yuboradi
+    # filialga xos e'lon: o'sha filial kanaliga o'zi chiqadi, boshqalarga chiqmaydi va so'ralmaydi
     store[20] = mk(20, "Марғилондаги дўконимиз бугун ва эртага ишламайди\n\n@hilolnashr")
     n, q = len(only(c.sent)), len(b.msgs)
     await p.on_new([store[20]])
@@ -211,24 +211,10 @@ async def scenario(monkeypatch):
         names = {t.id: t.username for t in (await s.execute(select(Target).where(Target.id.in_(mine)))).scalars()}
     marg = next(d for tid, d in ds.items() if "margilon" in names[tid])
     qoq = next(d for tid, d in ds.items() if "qoqon" in names[tid])
-    assert len(only(c.sent)) == n  # hech qaysi kanalga o'zi chiqmadi
-    assert marg.status == "pending" and marg.reason.startswith("Filialga tegishli post")
-    assert ("local", marg.id, "p_Hilol_margilon_test") in b.msgs[q:]
+    out = only(c.sent)[n:]
+    assert len(out) == 1 and out[0][0] == "p_Hilol_margilon_test" and marg.status == "sent"
     assert qoq.status == "skipped" and qoq.reason == "Post boshqa filialga tegishli"
-    assert not any(isinstance(m, tuple) and m[1] == qoq.id for m in b.msgs[q:])  # Qo'qon uchun so'ralmadi
-    # tasdiqlansa chiqadi, lekin eslab qolinmaydi: o'xshash post yana menejerdan so'raladi
-    async with Session() as s:
-        from app.db import Decision
-
-        mem = len(list((await s.execute(select(Decision))).scalars()))
-    assert await p.approve(marg.id) and len(only(c.sent)) == n + 1
-    store[21] = mk(21, "Марғилондаги дўконимиз бугун ва эртага ишламайди!\n\n@hilolnashr")
-    n = len(only(c.sent))
-    await p.on_new([store[21]])
-    async with Session() as s:
-        assert len(list((await s.execute(select(Decision))).scalars())) == mem
-        again = (await s.execute(select(Delivery).where(Delivery.target_id == marg.target_id).order_by(Delivery.id.desc()))).scalars().first()
-    assert len(only(c.sent)) == n and again.status == "pending" and again.reason.startswith("Filialga tegishli post")
+    assert not any(isinstance(m, tuple) and m[1] in (qoq.id, marg.id) for m in b.msgs[q:])  # hech kimdan so'ralmadi
 
     # AI'siz, qolipga mos kelmagan uzun post: so'raladi
     store[10] = mk(10, "Bugun nashriyotimizda katta yangilik. " * 12)
