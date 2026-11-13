@@ -388,10 +388,10 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         )
 
     @app.post("/source")
-    async def source_save(request: Request, username: str = Form(""), back: str = Form("/channels")):
+    async def source_save(request: Request, username: str = Form("")):
         error = await agent.set_source(username)
         request.session["warning" if error else "saved"] = error or "Manba kanal o'zgartirildi."
-        return _go(back if back in ("/channels", "/account") else "/channels")
+        return _go("/channels")
 
     @app.get("/channels/{target_id}")
     async def channel_form(request: Request, target_id: int, saved: int = 0):
@@ -519,7 +519,6 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         return page(
             request, "account.html", status=agent.status, step=agent.login_step,
             error=request.session.pop("warning", "") or agent.login_error,
-            saved=request.session.pop("saved", ""), source=agent.source_username,
             problems=request.session.pop("problems", []), hint=agent.login_hint, qr_svg=agent.qr_svg(),
         )
 

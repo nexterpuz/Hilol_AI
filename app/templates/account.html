@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block main %}
 <h1>Telegram akkaunt</h1>
-{% if saved %}<div class="note ok" role="status">{{ saved }}</div>{% endif %}
 {% if error %}<div class="note danger" role="alert">{{ error }}</div>{% endif %}
 {% for p in problems %}<div class="note warn" role="alert">{{ p }}</div>{% endfor %}
 <section class="card">
@@ -19,16 +18,6 @@
 {% if status.starting %}<meta http-equiv="refresh" content="5">{% endif %}
 <div class="note warn">{{ status.error or "Telegram akkaunt ulanmagan." }}</div>
 {% endif %}
-</section>
-<section class="card">
-<h2>Manba kanal</h2>
-<div class="muted">Agent shu kanaldagi yangi postlarni, tahrir va o'chirishlarni kuzatadi. Agent akkaunti unga obuna bo'lishi kerak. O'zgartirilganda ilgari ko'chirilgan postlar xaritasi saqlanadi.</div>
-<form method="post" action="/source">
-<input type="hidden" name="back" value="/account">
-<label for="source">Kanal username yoki havolasi</label>
-<div class="row"><input id="source" name="username" type="text" required value="{{ source }}" placeholder="hilolnashr" style="flex:1 1 240px">
-<button class="btn primary" type="submit">O'zgartirish</button></div>
-</form>
 </section>
 <section class="card">
 <h2>{{ "Akkauntni almashtirish" if status.connected else "Akkauntga kirish" }}</h2>
