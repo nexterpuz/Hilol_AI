@@ -92,14 +92,14 @@ function drawHeat(bt) {
       const c = map[d + "-" + h];
       if (!c || c[key] === null) { html += '<div class="cell" aria-hidden="true"></div>'; continue; }
       const k = max ? c[key] / max : 0;  // bitta rang, ochdan to'qqa
-      const color = `hsl(148 58% ${Math.round(88 - k * 62)}%)`;
+      const color = DARK ? `hsl(148 55% ${Math.round(18 + k * 44)}%)` : `hsl(148 58% ${Math.round(88 - k * 62)}%)`;  // tungi mavzuda yorqinroq = yuqoriroq
       const text = `${name}, ${String(h).padStart(2, "0")}:00 — ${key === "reach" ? "qamrov" : "ko'rishlar"} ${fmt(c[key], suffix)}, ${c.posts} ta post`;
       html += `<button type="button" class="cell has" style="background:${color}" data-tip="${esc(text)}" aria-label="${esc(text)}"></button>`;
     }
   });
   heat.innerHTML = html;
   document.getElementById("bt-note").textContent = bt.sample
-    ? `${bt.sample} ta post asosida, Toshkent vaqti. ${bt.mature_only ? "Faqat kamida 24 soat oldin chiqqan postlar hisobga olingan." : "Postlar hali 24 soat to'lmagan — natija dastlabki."} Rang qanchalik to'q bo'lsa, ${key === "reach" ? "qamrov" : "ko'rishlar"} shunchalik yuqori.`
+    ? `${bt.sample} ta post asosida, Toshkent vaqti. ${bt.mature_only ? "Faqat kamida 24 soat oldin chiqqan postlar hisobga olingan." : "Postlar hali 24 soat to'lmagan — natija dastlabki."} Rang qanchalik ${DARK ? "yorqin" : "to'q"} bo'lsa, ${key === "reach" ? "qamrov" : "ko'rishlar"} shunchalik yuqori.`
     : "Bu davrda hali ma'lumot yo'q. Statistika postlar chiqqach to'planadi.";
   document.getElementById("bt-top").innerHTML = bt.top.length
     ? "<strong>Eng yaxshi vaqtlar:</strong> " + bt.top.map(c => `${bt.weekdays[c.dow]} ${String(c.hour).padStart(2, "0")}:00 (${fmt(c[key], suffix)}, ${c.posts} ta post)`).join(" · ")

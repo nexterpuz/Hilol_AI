@@ -47,7 +47,7 @@ const refresh = autoRefresh(async () => {
   document.getElementById("k-views").textContent = fmt(d.avg_views);
   document.getElementById("k-reach").textContent = fmt(d.avg_reach, "%");
   document.getElementById("subs-note").textContent = d.series.length < 2 ? "Grafik uchun kamida ikkita o'lchov kerak. Statistika soatiga bir marta yig'iladi." : "";
-  const data = {labels: d.series.map(p => p.t), datasets: [{label: "Obunachilar", data: d.series.map(p => p.subs), borderColor: ACCENT, backgroundColor: "rgba(47,172,102,.12)", fill: true, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: ACCENT, pointHoverBorderColor: "#fff", pointHoverBorderWidth: 2, tension: 0}]};
+  const data = {labels: d.series.map(p => p.t), datasets: [{label: "Obunachilar", data: d.series.map(p => p.subs), borderColor: ACCENT, backgroundColor: "rgba(47,172,102,.12)", fill: true, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: ACCENT, pointHoverBorderColor: DARK ? "#171E1A" : "#fff", pointHoverBorderWidth: 2, tension: 0}]};
   if (!chart) {
     chart = new Chart(document.getElementById("subs"), {type: "line", data, options: {
       maintainAspectRatio: false, interaction: {mode: "index", intersect: false},
