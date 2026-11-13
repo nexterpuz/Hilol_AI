@@ -16,7 +16,7 @@ from sqlalchemy import delete, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import EPHEMERAL_DB, settings
-from .pipeline import is_paused, phone_keys, set_paused
+from .pipeline import is_paused, phone_keys, preview_text, set_paused
 from .db import Decision, Delivery, Event, Setting, Rule, Session, SourcePost, StatChannel, StatPost, Subscriber, Target, now
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -542,8 +542,21 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                 post = await s.get(SourcePost, d.post_id)
                 if post is None or post.deleted:
                     continue
-                items.append({"d": d, "target": await s.get(Target, d.target_id), "text": post.text or "(matnsiz post)"})
+                target = await s.get(Target, d.target_id)
+                lines = [(i, line[:70]) for i, line in enumerate((post.text or "").split("\n")) if i > 0 and line.strip()]
+                cut = d.cut_line if d.cut_line is not None else (post.cta_start_line if post.cta_start_line is not None else -1)
+                items.append({
+                    "d": d, "target": target, "text": post.text or "(matnsiz post)",
+                    "preview": (preview_text(post, target, d) if target else "") or "(matnsiz post)",
+                    "lines": lines, "cut": cut, "closing": d.closing or post.block_type or "contact",
+                })
         return page(request, "queue.html", items=items, warning=request.session.pop("warning", ""))
+
+    @app.post("/queue/{delivery_id}/adjust")
+    async def queue_adjust(delivery_id: int, cut_line: int = Form(-1), closing: str = Form("contact")):
+        if agent is not None and agent.pipeline is not None:
+            await agent.pipeline.adjust(delivery_id, cut_line, closing)
+        return _go("/queue")
 
     @app.post("/queue/{delivery_id}/send")
     async def queue_send(request: Request, delivery_id: int):

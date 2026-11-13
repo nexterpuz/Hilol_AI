@@ -140,6 +140,7 @@ async def scenario(monkeypatch):
         t = (await s.execute(select(Target).where(Target.username == "p_Hilol_qoqon_test"))).scalars().first()
         t.signature_html = "@Hilolnashr_qoqon"
         await s.commit()
+        qoqon_id_early = t.id
     store[4] = mk(4, "Juma ayyomi muborak!\n\n@hilolnashr", photo_id=40)
     k = len(only(c.edits))
     await p.on_edit(store[4])
@@ -205,6 +206,25 @@ async def scenario(monkeypatch):
     await p.on_new([store[10]])
     assert len(only(c.sent)) == n
     monkeypatch.setattr(ai, "analyze", fake_analyze)
+
+    # navbatda qo'lda tuzatish: admin kesish joyi va yakun turini o'zgartiradi
+    store[17] = mk(17, "Diqqat, e'lon\nTafsilot birinchi\nTafsilot ikkinchi\nАриза юбориш\n\n@hilolnashr")
+    await p.on_new([store[17]])
+    async with Session() as s:
+        d17 = (await s.execute(select(Delivery).where(Delivery.target_id == qoqon_id_early).order_by(Delivery.id.desc()))).scalars().first()
+        post17, t17 = await s.get(SourcePost, d17.post_id), await s.get(Target, d17.target_id)
+    assert d17.status == "pending"
+    assert pipeline.preview_text(post17, t17, d17) == "Diqqat, e'lon\nTafsilot birinchi\nTafsilot ikkinchi\nАриза юбориш\n\n@Hilolnashr_qoqon"
+    await p.adjust(d17.id, 2, "none")
+    async with Session() as s:
+        d17 = await s.get(Delivery, d17.id)
+    assert pipeline.preview_text(post17, t17, d17) == "Diqqat, e'lon\nTafsilot birinchi"
+    n = len(only(c.sent))
+    assert await p.publish(d17.id)
+    assert only(c.sent)[n][1] == "Diqqat, e'lon\nTafsilot birinchi"
+    await p.adjust(d17.id, -1, "contact")  # yuborilgan postga ta'sir qilmaydi
+    async with Session() as s:
+        assert (await s.get(Delivery, d17.id)).cut_line == 2
 
     # tasdiq talab qiladigan so'z: qolipga mos bo'lsa ham so'raladi
     store[11] = mk(11, "Jamoamizga taklif qilamiz\nАриза юбориш учун профилга ёзинг\n\n@hilolnashr")

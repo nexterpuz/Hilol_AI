@@ -67,6 +67,9 @@ class FakePipeline:
         self.published.append(delivery_id)
         return True
 
+    async def adjust(self, delivery_id, cut_line, closing):
+        self.published.append(("adjust", delivery_id, cut_line, closing))
+
     async def recall(self, post_id):
         self.published.append(("recall", post_id))
         return 2
@@ -185,6 +188,10 @@ def test_panel_flow():
     # navbat: matn ekranlanadi, yuborish pipeline'ni chaqiradi
     q = c.get("/queue").text
     assert "Sinov sababi 7391" in q and "<script>alert" not in q
+    assert "Kanalda shunday chiqadi" in q
+    c.post(f"/queue/{pending_id}/adjust", data={"cut_line": "-1", "closing": "signature"})
+    assert ("adjust", pending_id, -1, "signature") in pipe.published
+    pipe.published.clear()
     c.post(f"/queue/{pending_id}/send")
     assert pipe.published == [pending_id]
     c.post(f"/queue/{pending_id}/reject")

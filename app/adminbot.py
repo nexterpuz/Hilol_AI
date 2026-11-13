@@ -9,7 +9,7 @@ from telethon.sessions import StringSession
 
 from .config import settings
 from .db import Delivery, Session, SourcePost, Target
-from .pipeline import is_paused, phone_key, phone_keys, set_paused
+from .pipeline import is_paused, phone_key, phone_keys, preview_text, set_paused
 
 log = logging.getLogger(__name__)
 
@@ -54,13 +54,16 @@ class AdminBot:
 
     async def ask(self, delivery_id: int, target, text: str, reason: str, skipped: bool) -> None:
         head = "Yuborilmadi" if skipped else "Tasdiq kerak"
-        await self.say(f"{head} — {target.name}\nSabab: {reason}\n\n{preview(text)}", self._buttons(delivery_id, skipped))
+        await self.say(
+            f"{head} — {target.name}\nSabab: {reason}\n\nKanalda shunday chiqadi:\n\n{preview(text)}",
+            self._buttons(delivery_id, skipped),
+        )
 
     async def ask_branch(self, delivery_id: int, target, text: str) -> None:
         """Sotuv postini filial menejer(lar)iga yuboradi; menejer bog'lanmagan bo'lsa — bosh adminga."""
         body = (
             f"Yangi post — {target.name}\n"
-            "Kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosing.\n\n" + preview(text)
+            "Kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosing.\n\nKanalda shunday chiqadi:\n\n" + preview(text)
         )
         buttons = [Button.inline("Kanalga joylash", data=f"ok:{delivery_id}"), Button.inline("Rad etish", data=f"no:{delivery_id}")]
         managers = list((target.manager_ids or {}).keys())
@@ -77,6 +80,7 @@ class AdminBot:
     async def _send_pending(self, user_id: int, targets: list) -> int:
         ids = [t.id for t in targets]
         names = {t.id: t.name for t in targets}
+        by_id = {t.id: t for t in targets}
         async with Session() as s:
             deliveries = list((await s.execute(
                 select(Delivery).where(Delivery.target_id.in_(ids), Delivery.status == "pending").order_by(Delivery.id.desc()).limit(10)
@@ -85,7 +89,8 @@ class AdminBot:
         for d, post in reversed(items):
             if post is None or post.deleted:
                 continue
-            body = f"Kutmoqda — {names[d.target_id]}\n\n{preview(post.text or '(matnsiz post)')}"
+            shown = preview_text(post, by_id[d.target_id], d) or "(matnsiz post)"
+            body = f"Kutmoqda — {names[d.target_id]}\n\nKanalda shunday chiqadi:\n\n{preview(shown)}"
             await self.send([user_id], body, [Button.inline("Kanalga joylash", data=f"ok:{d.id}"), Button.inline("Rad etish", data=f"no:{d.id}")])
         return len(items)
 

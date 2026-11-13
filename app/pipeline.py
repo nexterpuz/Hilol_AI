@@ -94,6 +94,23 @@ def similar(a: str, b: str) -> bool:
     return a == b or SequenceMatcher(None, a, b).ratio() >= 0.9
 
 
+def final_parts(post, target, delivery=None) -> tuple[int | None, str]:
+    """Kesish qatori va qo'yiladigan yakun: admin navbatda tuzatgan bo'lsa — o'sha, aks holda tahlil natijasi."""
+    cut, kind = post.cta_start_line, post.block_type
+    if delivery is not None and delivery.cut_line is not None:
+        cut = None if delivery.cut_line < 0 else delivery.cut_line
+    if delivery is not None and delivery.closing:
+        kind = delivery.closing
+    closing = "" if (delivery is not None and delivery.closing == "none") else closing_for(target, kind)
+    return cut, closing
+
+
+def preview_text(post, target, delivery=None) -> str:
+    """Post filial kanalida qanday matn bilan chiqishi (formatlashsiz ko'rinish)."""
+    cut, closing = final_parts(post, target, delivery)
+    return build_post(post.text or "", None, cut, closing)[0]
+
+
 def text_hash(msg) -> str:
     ents = repr([e.to_dict() for e in (msg.entities or [])])
     return hashlib.sha256(((msg.message or "") + ents).encode()).hexdigest()
@@ -229,15 +246,16 @@ class Pipeline:
                 plan.append((delivery.id, t, action, reason, quiet, branch))
             await s.commit()
             post_id = post.id
+            views = {t.id: preview_text(post, t) for t in targets} if text else {}
 
         await db_log("new_post", f"post={post_id} ids={ids}")
         for delivery_id, target, action, reason, quiet, branch in plan:
             if action == "send":
                 await self.publish(delivery_id)
             elif self.notifier and branch:
-                await self.notifier.ask_branch(delivery_id, target, cap.message or "(matnsiz post)")
+                await self.notifier.ask_branch(delivery_id, target, views.get(target.id) or "(matnsiz post)")
             elif self.notifier and not quiet:
-                await self.notifier.ask(delivery_id, target, cap.message or "(matnsiz post)", reason, skipped=action == "skip")
+                await self.notifier.ask(delivery_id, target, views.get(target.id) or "(matnsiz post)", reason, skipped=action == "skip")
 
     async def _log_ai_failure(self) -> None:
         """AI xatosini jurnalga yozadi; bir xil xato har postda takrorlanmasligi uchun 6 soatda bir marta."""
@@ -274,7 +292,8 @@ class Pipeline:
             await self._fail(delivery_id, target, "Manba post topilmadi")
             return False
         cap = next((m for m in msgs if m.message), msgs[0])
-        text, ents = build_post(cap.message or "", cap.entities, post.cta_start_line, closing_for(target, post.block_type))
+        cut, closing = final_parts(post, target, d)
+        text, ents = build_post(cap.message or "", cap.entities, cut, closing)
         files = [m for m in msgs if is_file(m)]
         if not fits(text, bool(files), self.premium):
             await self._fail(delivery_id, target, "Matn Telegram limitidan uzun (Premium kerak yoki qisqartirish)")
@@ -353,6 +372,15 @@ class Pipeline:
             await s.commit()
         await db_log("recalled", f"post={post_id} removed_from={removed}")
         return removed
+
+    async def adjust(self, delivery_id: int, cut_line: int, closing: str) -> None:
+        """Admin navbatda kesish joyi va yakun turini qo'lda belgilaydi."""
+        async with Session() as s:
+            d = await s.get(Delivery, delivery_id)
+            if d and d.status in ("pending", "skipped", "failed"):
+                d.cut_line = cut_line
+                d.closing = closing if closing in ("contact", "signature", "none") else None
+                await s.commit()
 
     async def reject(self, delivery_id: int, remember: bool = True) -> None:
         if remember:

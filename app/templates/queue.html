@@ -9,7 +9,29 @@
 <span class="{{ 'danger' if i.d.status == 'failed' else 'warn' }}">{{ {"pending": "Tasdiq kutmoqda", "skipped": "AI yubormadi", "failed": "Xatolik"}[i.d.status] }}</span>
 </div>
 <div class="muted">Sabab: {{ i.d.reason }}</div>
-<pre>{{ i.text[:700] }}{% if i.text|length > 700 %}…{% endif %}</pre>
+<div class="muted">Kanalda shunday chiqadi:</div>
+<pre class="note">{{ i.preview[:1200] }}{% if i.preview|length > 1200 %}…{% endif %}</pre>
+{% if i.lines %}
+<details>
+<summary style="cursor:pointer;min-height:44px;display:flex;align-items:center">Noto'g'ri kesilganmi? Kesish joyini o'zgartirish</summary>
+<form method="post" action="/queue/{{ i.d.id }}/adjust" class="grid" style="margin-top:8px">
+<div><label for="cut{{ i.d.id }}">Shu qatordan boshlab kesilsin</label>
+<select id="cut{{ i.d.id }}" name="cut_line">
+<option value="-1" {{ 'selected' if i.cut < 0 }}>Hech narsa kesilmasin</option>
+{% for n, line in i.lines %}<option value="{{ n }}" {{ 'selected' if n == i.cut }}>{{ n + 1 }}-qator: {{ line }}</option>{% endfor %}
+</select></div>
+<div><label for="cl{{ i.d.id }}">Oxiriga qo'yilsin</label>
+<select id="cl{{ i.d.id }}" name="closing">
+<option value="contact" {{ 'selected' if i.closing == 'contact' }}>To'liq aloqa bloki</option>
+<option value="signature" {{ 'selected' if i.closing == 'signature' }}>Qisqa imzo</option>
+<option value="none" {{ 'selected' if i.closing == 'none' }}>Hech narsa</option>
+</select></div>
+<div style="align-self:end"><button class="btn" type="submit">Ko'rinishni yangilash</button></div>
+</form>
+<div class="muted">Asl matn:</div>
+<pre class="muted">{{ i.text[:1200] }}</pre>
+</details>
+{% endif %}
 <div class="row">
 <form method="post" action="/queue/{{ i.d.id }}/send"><button class="btn primary" type="submit">{{ "Yuborish" if i.d.status == "pending" else "Baribir yuborish" }}</button></form>
 <form method="post" action="/queue/{{ i.d.id }}/reject"><button class="btn" type="submit">Rad etish</button></form>

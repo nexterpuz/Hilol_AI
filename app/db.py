@@ -98,6 +98,9 @@ class Delivery(Base):
     status: Mapped[str] = mapped_column(String(10), default="pending")
     reason: Mapped[str] = mapped_column(Text, default="")
     target_msg_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # Admin navbatda qo'lda tuzatgan bo'lsa: kesish qatori (-1 = kesilmasin) va yakun turi
+    cut_line: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    closing: Mapped[str | None] = mapped_column(String(10), nullable=True)  # contact | signature | none
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -163,6 +166,7 @@ def _migrate(conn) -> None:
 
     wanted = {
         "source_posts": {"media_ids": "JSON", "block_type": "VARCHAR(10)"},
+        "deliveries": {"cut_line": "INTEGER", "closing": "VARCHAR(10)"},
         "targets": {
             "signature_html": "TEXT DEFAULT '' NOT NULL", "manager_phones": "TEXT DEFAULT '' NOT NULL",
             "manager_ids": "JSON", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",
@@ -170,6 +174,8 @@ def _migrate(conn) -> None:
     }
     inspector = inspect(conn)
     for table, columns in wanted.items():
+        if not inspector.has_table(table):
+            continue
         have = {c["name"] for c in inspector.get_columns(table)}
         for name, sql_type in columns.items():
             if name not in have:
