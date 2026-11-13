@@ -83,9 +83,9 @@ def test_bot_keyboard_and_button_presses(monkeypatch):
     def labels(rows):
         return [b.button.text for row in rows for b in row]
 
-    assert labels(keyboard(False, True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE]
+    assert labels(keyboard(False, True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, adminbot.BTN_SUGGEST]
     assert labels(keyboard(True, False)) == [BTN_WEEK, BTN_MONTH, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
-    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
+    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, adminbot.BTN_SUGGEST, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
 
     class Ev:
         def __init__(self, sender, text):
@@ -242,3 +242,75 @@ def test_admin_message_to_managers():
     assert sent[1][0] == ["8001", "8002", "8003"] and "2 / 3" in everyone.out[0] and "bloklagan" in everyone.out[0]
     assert len(sent) == 2 == n and "bekor qilindi" in monkey.out[0] and compose == {}
     assert bad.answers == ["Ruxsat yo'q"] and hack.menu is None
+
+
+def test_manager_suggestion_and_admin_reply():
+    """Menejer taklif yuboradi, bosh admin botdan oladi va javob yozadi."""
+    from types import SimpleNamespace as NS
+
+    from sqlalchemy import update
+
+    from app.adminbot import BTN_SUGGEST, BTN_WEEK, MESSAGE_HEAD, AdminBot
+
+    class Ev:
+        def __init__(self, sender, text="", data=b""):
+            self.sender_id, self.raw_text, self.data = sender, text, data
+            self.message, self.out, self.answers = NS(contact=None, media=None), [], []
+
+        async def get_sender(self):
+            return NS(first_name="Ali", last_name="Valiyev", username="ali_v")
+
+        async def respond(self, text, buttons=None, parse_mode=None):
+            self.out.append(text)
+
+        async def answer(self, text="", alert=False):
+            self.answers.append(text)
+
+        async def edit(self, text, buttons=None, parse_mode=None):
+            self.out.append(text)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add(Target(name="T-Qo'qon", username="sug_1", manager_ids={"6001": "1"}))
+            await s.commit()
+        bot, sent = AdminBot(), []
+
+        async def fake_send(users, text, buttons=None):
+            data = buttons[0].type.data.decode() if buttons else None
+            sent.append(([str(u) for u in users], text, data))
+            return len(list(users))
+
+        bot.send = fake_send
+        ask = Ev(6001, BTN_SUGGEST)
+        await bot._on_message(ask)
+        idea = Ev(6001, "Do'konga ko'proq bolalar kitobi kerak")
+        await bot._on_message(idea)
+        again = Ev(6001, "bu oddiy xabar, taklif emas")
+        await bot._on_message(again)
+        # taklif yozish o'rniga boshqa tugma bosilsa — bekor bo'ladi
+        await bot._on_message(Ev(6001, BTN_SUGGEST))
+        n = len(sent)
+        cancel = Ev(6001, "/bekor")
+        await bot._on_message(cancel)
+        # begona odam taklif yubora olmaydi
+        stranger = Ev(31337, BTN_SUGGEST)
+        await bot._on_message(stranger)
+        # admin javob yozadi
+        click = Ev(777, data=sent[0][2].encode())
+        await bot._on_click(click)
+        reply = Ev(777, "Rahmat, keyingi hafta yuboramiz")
+        await bot._on_message(reply)
+        return ask, idea, sent, n, cancel, stranger, click, reply, bot
+
+    ask, idea, sent, n, cancel, stranger, click, reply, bot = asyncio.run(run())
+    assert "yozib yuboring" in ask.out[0] and "bosh adminga yuborildi" in idea.out[0]
+    users, text, data = sent[0]
+    assert users == ["777"] and data == "msg:u6001"
+    assert text == "💡 Taklif — T-Qo'qon (Ali Valiyev, @ali_v):\n\nDo'konga ko'proq bolalar kitobi kerak"
+    assert n == 1 and "bekor qilindi" in cancel.out[0]  # ikkinchi xabar va bekor qilingan taklif ketmadi
+    assert not any("yozib yuboring" in t for t in stranger.out)
+    assert "Kimga: menejer (1 kishi)" in click.out[0]
+    assert sent[1][:2] == (["6001"], MESSAGE_HEAD + "Rahmat, keyingi hafta yuboramiz") and "1 / 1" in reply.out[0]
+    assert not bot._compose and not bot._suggest

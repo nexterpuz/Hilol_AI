@@ -21,11 +21,12 @@ BTN_QUEUE, BTN_STATE = "📥 Kutayotgan postlar", "ℹ️ Holat"
 BTN_STOP, BTN_RESUME = "⏸ To'xtatish", "▶️ Davom ettirish"
 BTN_MANAGERS = "👥 Menejerlar"
 BTN_MESSAGE = "✉️ Xabar yuborish"
+BTN_SUGGEST = "💡 Taklif yuborish"
 MESSAGE_HEAD = "📢 Bosh admindan xabar:\n\n"
 ALIASES = {
     BTN_WEEK.lower(): "/hisobot", BTN_MONTH.lower(): "/hisobot_oy", BTN_QUEUE.lower(): "/navbat",
     BTN_STATE.lower(): "/holat", BTN_STOP.lower(): "/stop", BTN_RESUME.lower(): "/resume",
-    BTN_MANAGERS.lower(): "/menejerlar", BTN_MESSAGE.lower(): "/xabar",
+    BTN_MANAGERS.lower(): "/menejerlar", BTN_MESSAGE.lower(): "/xabar", BTN_SUGGEST.lower(): "/taklif",
 }
 
 
@@ -35,6 +36,7 @@ def keyboard(is_admin: bool, is_manager: bool, paused: bool = False):
     second = []
     if is_manager:
         second.append(Button.text(BTN_QUEUE))
+        second.append(Button.text(BTN_SUGGEST))
     if is_admin:
         second.append(Button.text(BTN_STATE))
         second.append(Button.text(BTN_RESUME if paused else BTN_STOP))
@@ -89,7 +91,8 @@ class AdminBot:
     def __init__(self):
         self.bot = TelegramClient(StringSession(), settings.api_id, settings.api_hash)
         self.pipeline = None  # agent ulanganda o'rnatiladi
-        self._compose: dict[int, object] = {}  # xabar yozayotgan admin -> "all" yoki filial id
+        self._compose: dict[int, object] = {}  # xabar yozayotgan admin -> "all", filial id yoki ("user", id)
+        self._suggest: set[int] = set()  # taklif yozayotgan menejerlar
 
     async def start(self) -> None:
         await self.bot.start(bot_token=settings.bot_token)
@@ -158,6 +161,8 @@ class AdminBot:
         """Tanlov bo'yicha qabul qiluvchilar (takrorsiz) va tanlov nomi."""
         async with Session() as s:
             targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
+        if isinstance(choice, tuple):  # bitta menejerga javob
+            return [str(choice[1])], "menejer"
         if choice != "all":
             targets = [t for t in targets if t.id == choice]
         users = list(dict.fromkeys(uid for t in targets for uid in (t.manager_ids or {})))
@@ -192,6 +197,27 @@ class AdminBot:
         if sent < len(users):
             note += " Yetmaganlar botni bloklagan yoki o'chirgan bo'lishi mumkin."
         await event.respond(note)
+
+    async def _forward_suggestion(self, event, mine: list) -> None:
+        """Menejer taklifini bosh adminga yetkazadi."""
+        who = ""
+        try:
+            sender = await event.get_sender()
+            name = " ".join(x for x in (getattr(sender, "first_name", ""), getattr(sender, "last_name", "")) if x)
+            who = name + (f", @{sender.username}" if getattr(sender, "username", None) else "")
+        except Exception:
+            pass
+        branch = ", ".join(t.name for t in mine)
+        head = f"💡 Taklif — {branch}" + (f" ({who})" if who else "") + ":\n\n"
+        reply = [Button.inline("Javob yozish", data=f"msg:u{event.sender_id}")]
+        text, media = event.raw_text or "", getattr(event.message, "media", None)
+        if media is not None:
+            sent = await self.send_media(settings.admin_ids, media, head + text)
+            if sent:
+                await self.send(settings.admin_ids, f"Yuqoridagi taklifga javob — {branch}:", reply)
+        else:
+            sent = await self.send(settings.admin_ids, head + text, reply)
+        await event.respond("Taklifingiz bosh adminga yuborildi. Rahmat!" if sent else "Taklif yuborilmadi, keyinroq urinib ko'ring.")
 
     async def send_media(self, user_ids, media, caption: str) -> int:
         sent = 0
@@ -286,6 +312,14 @@ class AdminBot:
         mine = await self._targets_of(uid)
         if mine:
             await self._touch(uid)
+        if uid in self._suggest:
+            self._suggest.discard(uid)
+            if mine and not text.startswith("/"):  # buyruq yoki boshqa tugma — taklif bekor qilinadi
+                await self._forward_suggestion(event, mine)
+                return
+            if text == "/bekor":
+                await event.respond("Taklif yuborish bekor qilindi.")
+                return
 
         async def kb():
             return keyboard(is_admin, bool(mine), await is_paused())
@@ -298,6 +332,9 @@ class AdminBot:
         elif is_admin and text in ("/resume", "/davom"):
             await set_paused(False)
             await event.respond("Agent davom ettirildi. To'xtatilgan paytda to'plangan postlar Tasdiq navbatida turibdi.", buttons=await kb())
+        elif mine and text == "/taklif":
+            self._suggest.add(uid)
+            await event.respond("Taklif yoki fikringizni yozib yuboring (rasm ham bo'ladi) — u bosh adminga yetkaziladi.\nBekor qilish: /bekor")
         elif is_admin and text == "/xabar":
             await self._message_menu(event)
         elif is_admin and text == "/menejerlar":
@@ -343,18 +380,24 @@ class AdminBot:
                 await event.answer("Bekor qilindi")
                 await event.edit("Xabar yuborish bekor qilindi.", buttons=None)
                 return
-            choice = "all" if raw_id == "all" else int(raw_id) if raw_id.isdigit() else None
+            if raw_id.startswith("u") and raw_id[1:].isdigit():
+                choice = ("user", int(raw_id[1:]))  # taklif yuborgan menejerga javob
+            else:
+                choice = "all" if raw_id == "all" else int(raw_id) if raw_id.isdigit() else None
             if choice is None:
                 return
             users, label = await self._recipients(choice)
             self._compose[event.sender_id] = choice
             await event.answer("Xabarni yozing")
-            await event.edit(
+            prompt = (
                 f"Kimga: {label} ({len(users)} kishi).\n"
-                "Endi xabar matnini yozib yuboring (rasm yoki fayl ham bo'ladi) — keyingi xabaringiz ularga jo'natiladi.\n"
-                "Bekor qilish: /bekor",
-                buttons=None,
+                "Endi xabar matnini yozib yuboring (rasm yoki fayl ham bo'ladi) — keyingi xabaringiz jo'natiladi.\n"
+                "Bekor qilish: /bekor"
             )
+            if isinstance(choice, tuple):
+                await event.respond(prompt)  # taklif matni chatda qolsin
+            else:
+                await event.edit(prompt, buttons=None)
             return
         if not raw_id.isdigit() or self.pipeline is None:
             await event.answer("Agent hozir ulanmagan", alert=True)
