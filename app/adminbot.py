@@ -47,7 +47,7 @@ class AdminBot:
             return
         delivery_id = int(raw_id)
         if action == "ok":
-            done = await self.pipeline.publish(delivery_id)
+            done = await self.pipeline.approve(delivery_id)
             note = "Yuborildi" if done else "Yuborilmadi (allaqachon yuborilgan yoki xato)"
         else:
             await self.pipeline.reject(delivery_id)

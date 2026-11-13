@@ -63,9 +63,15 @@ class FakePipeline:
     def __init__(self):
         self.published = []
 
-    async def publish(self, delivery_id):
+    async def approve(self, delivery_id):
         self.published.append(delivery_id)
         return True
+
+    async def reject(self, delivery_id):
+        async with Session() as s:
+            d = await s.get(Delivery, delivery_id)
+            d.status = "rejected"
+            await s.commit()
 
     async def fetch_template(self, link):
         if "t.me/" not in link:
@@ -85,7 +91,7 @@ async def _seed():
         s.add(post)
         await s.flush()
         sent = Delivery(post_id=post.id, target_id=t.id, status="sent", sent_at=now(), target_msg_ids=[9])
-        pend = Delivery(post_id=post.id, target_id=t.id, status="pending", reason="AI ishonchi past")
+        pend = Delivery(post_id=post.id, target_id=t.id, status="pending", reason="Sinov sababi 7391")
         s.add_all([sent, pend])
         await s.flush()
         s.add(StatChannel(target_id=t.id, subscribers=1000, at=now() - timedelta(days=2)))
@@ -161,11 +167,11 @@ def test_panel_flow():
 
     # navbat: matn ekranlanadi, yuborish pipeline'ni chaqiradi
     q = c.get("/queue").text
-    assert "AI ishonchi past" in q and "<script>alert" not in q
+    assert "Sinov sababi 7391" in q and "<script>alert" not in q
     c.post(f"/queue/{pending_id}/send")
     assert pipe.published == [pending_id]
     c.post(f"/queue/{pending_id}/reject")
-    assert "AI ishonchi past" not in c.get("/queue").text  # rad etilgan post navbatdan chiqdi
+    assert "Sinov sababi 7391" not in c.get("/queue").text  # rad etilgan post navbatdan chiqdi
 
     # Telegram akkauntga panel orqali kirish
     assert "ulanmagan" in c.get("/account").text

@@ -98,6 +98,17 @@ class Delivery(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class Decision(Base):
+    """Adminning qo'lda qabul qilgan qarori: o'xshash post kelganda qayta so'ralmaydi."""
+
+    __tablename__ = "decisions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    send: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Event(Base):
     """Jurnal: agent nima qildi va nega."""
 

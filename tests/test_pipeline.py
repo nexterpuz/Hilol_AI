@@ -5,7 +5,7 @@ from types import SimpleNamespace as NS
 
 from sqlalchemy import select
 
-from app import ai, pipeline
+from app import ai, pipeline, rules as fallback
 from app.db import Delivery, Session, SourcePost, Target, init_db
 
 CHAT = -100777
@@ -55,7 +55,7 @@ class Bot:
         self.msgs.append(("ask", delivery_id, skipped))
 
 
-async def fake_analyze(text, targets, rules):
+async def fake_analyze(text, targets, rules, examples=None):
     if "Manzillarimiz" in text:
         kind, line = "contact", 2
     elif "@hilolnashr" in text:
@@ -142,23 +142,60 @@ async def scenario(monkeypatch):
     await p.on_new([store[5]])
     assert only(c.sent)[n][1] == "Ilm olish har bir musulmonga farzdir.\n\n@Hilolnashr_qoqon"
 
-    # AI ishlamasa: post yuborilmaydi, adminga sababi bilan so'rov boradi, jurnalga yoziladi
-    async def broken(text, targets, rules):
+    # xotira: admin "baribir yuborish" degan postga o'xshashi qayta so'ralmaydi
+    async with Session() as s:
+        from app.db import Decision
+
+        before = len(list((await s.execute(select(Decision))).scalars()))
+    store[7] = mk(7, "Toshkent filiali ertaga ishlamaydi")
+    await p.on_new([store[7]])
+    async with Session() as s:
+        asked = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine), Delivery.status == "skipped").order_by(Delivery.id.desc()))).scalars().first()
+    n, q = len(only(c.sent)), len(b.msgs)
+    assert await p.approve(asked.id) and len(only(c.sent)) == n + 1
+    store[8] = mk(8, "Toshkent filiali ertaga ishlamaydi!")  # deyarli bir xil matn
+    await p.on_new([store[8]])
+    async with Session() as s:
+        last = list((await s.execute(select(Delivery).where(Delivery.target_id == asked.target_id).order_by(Delivery.id.desc()).limit(1))).scalars())[0]
+        assert len(list((await s.execute(select(Decision))).scalars())) == before + 1
+    assert last.status == "sent" and last.reason == "Avvalgi qaroringiz bo'yicha"
+    # rad etilgan qaror ham eslab qolinadi: o'xshash post jim o'tkazib yuboriladi
+    other = next(i for i in mine if i != asked.target_id)
+    async with Session() as s:
+        d8 = (await s.execute(select(Delivery).where(Delivery.target_id == other).order_by(Delivery.id.desc()))).scalars().first()
+    await p.reject(d8.id)
+    q = len(b.msgs)
+    store[9] = mk(9, "Toshkent filiali ertaga ishlamaydi")
+    await p.on_new([store[9]])
+    async with Session() as s:
+        d9 = (await s.execute(select(Delivery).where(Delivery.target_id == other).order_by(Delivery.id.desc()))).scalars().first()
+    assert d9.status == "skipped" and d9.reason == "Avvalgi qaroringiz bo'yicha"
+    assert ("ask", d9.id, True) not in b.msgs  # bu kanal uchun so'ralmadi
+
+    # AI ishlamasa: zaxira qoidalar ishlaydi, qolipga mos post avtomatik chiqadi
+    async def broken(text, targets, rules, examples=None):
         ai.last_error = "Anthropic hisobida mablag' tugagan."
         return None
 
     monkeypatch.setattr(ai, "analyze", broken)
-    store[6] = mk(6, "Yangi kitob\nManzillarimiz", photo_id=60)
+    store[6] = mk(6, "Yangi «Sabr» kitobi\nNarxi: 45 000 so'm\n\n📍 Манзилларимиз\nСотиб олиш учун:\n+998712175999\n@hilolnashr", photo_id=60)
     n = len(only(c.sent))
     await p.on_new([store[6]])
-    assert len(only(c.sent)) == n
+    out = only(c.sent)[n:]
+    assert len(out) == 2 and out[0][1].startswith("Yangi «Sabr» kitobi\nNarxi: 45 000 so'm\n\nBuyurtma berish uchun")
+    assert "Манзилларимиз" not in out[0][1] and "@hilolnashr" not in out[0][1]
     async with Session() as s:
         from app.db import Event
 
         d = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()))).scalars().first()
-        assert d.status == "pending" and d.reason == "AI ishlamadi: aloqa bloki tekshirilmagan"
+        assert d.status == "sent" and d.reason.startswith("AI'siz qoidalar")
         ev = (await s.execute(select(Event).where(Event.kind == "ai_failed"))).scalars().first()
         assert ev is not None and "mablag' tugagan" in ev.detail  # tafsilot faqat jurnalda
+    # AI'siz, qolipga mos kelmagan uzun post: so'raladi
+    store[10] = mk(10, "Bugun nashriyotimizda katta yangilik. " * 12)
+    n = len(only(c.sent))
+    await p.on_new([store[10]])
+    assert len(only(c.sent)) == n
     monkeypatch.setattr(ai, "analyze", fake_analyze)
 
     # o'chirish
@@ -189,3 +226,24 @@ def test_migration_adds_missing_column():
         assert conn.execute(text("SELECT signature_html FROM targets")).scalar() == ""
         assert "block_type" in {c["name"] for c in inspect(conn).get_columns("source_posts")}
         assert "media_ids" in {c["name"] for c in inspect(conn).get_columns("source_posts")}
+
+
+def test_rules_find_block():
+    assert fallback.find_block("✨ Жума муборак!\n\n@hilolnashr") == ("signature", 2)
+    sale = "📕 Yangi kitob\n\n👉 Нархи: 39 000 сўм\n\n📍 Манзилларимиз\n\n✅ Сайт орқали буюртма бериш\n\nСотиб олиш учун:\n@hilol_reception\n+998712175999\n\n✅ «Hilol» иловаси орқали сотиб олсангиз, ҳар сафар 1% бонусга эга бўласиз.\n\n@hilolnashr"
+    assert fallback.find_block(sale) == ("contact", 4)
+    assert fallback.find_block("Ilm olish farzdir.") == ("none", None)
+    assert fallback.find_block("@hilolnashr") == ("none", None)  # birinchi qator har doim mazmun
+    # mazmun ichidagi "manzil" so'zi blok boshlanishi emas
+    assert fallback.find_block("Kitobning manzili — qalb.\nDavomi bor.\n\n@hilolnashr") == ("signature", 3)
+
+
+def test_rules_relevance():
+    from types import SimpleNamespace as T
+
+    targets = [T(id=1, keywords="Qo'qon"), T(id=2, keywords="Marg'ilon, Margilon")]
+    general = fallback.analyze("Yangi kitob chiqdi\n\n@hilolnashr", targets)
+    assert all(d.send and d.confidence >= 0.8 for d in general.decisions)
+    local = fallback.analyze("Qo'qon filialimiz bugun ishlamaydi\n\n@hilolnashr", targets)
+    assert local.for_target(1).send and local.for_target(1).confidence >= 0.8
+    assert not local.for_target(2).send and local.for_target(2).confidence < 0.8  # admindan so'raladi

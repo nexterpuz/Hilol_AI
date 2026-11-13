@@ -16,7 +16,7 @@ from sqlalchemy import delete, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import EPHEMERAL_DB, settings
-from .db import Delivery, Event, Rule, Session, SourcePost, StatChannel, StatPost, Target, now
+from .db import Decision, Delivery, Event, Rule, Session, SourcePost, StatChannel, StatPost, Target, now
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 MODES = {"auto": "Avto", "smart": "Aqlli", "manual": "Qo'lda"}
@@ -468,6 +468,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                 await s.execute(delete(StatPost).where(StatPost.delivery_id.in_(ids)))
                 await s.execute(delete(Delivery).where(Delivery.id.in_(ids)))
             await s.execute(delete(StatChannel).where(StatChannel.target_id == target_id))
+            await s.execute(delete(Decision).where(Decision.target_id == target_id))
             await s.execute(delete(Target).where(Target.id == target_id))
             await s.commit()
         return _go("/channels")
@@ -496,16 +497,19 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         if agent is None or agent.pipeline is None:
             request.session["warning"] = "Telegram akkaunt ulanmagan — post yuborilmadi."
         else:
-            await agent.pipeline.publish(delivery_id)
+            await agent.pipeline.approve(delivery_id)
         return _go("/queue")
 
     @app.post("/queue/{delivery_id}/reject")
     async def queue_reject(delivery_id: int):
-        async with Session() as s:
-            d = await s.get(Delivery, delivery_id)
-            if d and d.status in ("pending", "skipped", "failed"):
-                d.status = "rejected"
-                await s.commit()
+        if agent is not None and agent.pipeline is not None:
+            await agent.pipeline.reject(delivery_id)  # qaror eslab qolinadi
+        else:
+            async with Session() as s:
+                d = await s.get(Delivery, delivery_id)
+                if d and d.status in ("pending", "skipped", "failed"):
+                    d.status = "rejected"
+                    await s.commit()
         return _go("/queue")
 
     # ---------- Telegram akkaunt ----------

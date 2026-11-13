@@ -3,14 +3,16 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
+from difflib import SequenceMatcher
 
 from sqlalchemy import select
 from telethon import TelegramClient
 from telethon.tl.types import MessageMediaWebPage
 
-from . import ai
+from . import ai, rules as fallback
 from .config import settings
-from .db import Delivery, Rule, Session, SourcePost, Target, log as db_log, now
+from .db import Decision, Delivery, Rule, Session, SourcePost, Target, log as db_log, now
 from .textops import build_post, fits, message_to_template, parse_message_link
 
 log = logging.getLogger(__name__)
@@ -36,6 +38,18 @@ def closing_for(target, block_type: str | None) -> str:
     if block_type in (None, "contact"):  # None — bu maydon qo'shilishidan oldingi postlar
         return target.template_html
     return target.signature_html or f"@{target.username}"
+
+
+def normalize(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").lower()).strip()
+
+
+def similar(a: str, b: str) -> bool:
+    """Ikki post matni deyarli bir xilmi (masalan, har hafta takrorlanadigan tabrik)."""
+    a, b = normalize(a), normalize(b)
+    if not a or not b:
+        return False
+    return a == b or SequenceMatcher(None, a, b).ratio() >= 0.9
 
 
 def text_hash(msg) -> str:
@@ -106,11 +120,20 @@ class Pipeline:
             targets = list((await s.execute(select(Target).where(Target.active))).scalars())
             rules = [r.text for r in (await s.execute(select(Rule).where(Rule.active))).scalars()]
 
+            memory = list((await s.execute(select(Decision).order_by(Decision.id.desc()).limit(300))).scalars())
+
+        text = cap.message or ""
+        by_name = {t.id: t.name for t in targets}
+        examples = [
+            f"- {by_name.get(m.target_id, '?')}: {'yuborilsin' if m.send else 'yuborilmasin'} — {normalize(m.text)[:200]}"
+            for m in memory[:15]
+        ]
         # Aloqa blokini topish uchun tahlil har qanday rejimda kerak
-        analysis = await ai.analyze(cap.message or "", targets, rules) if cap.message else None
-        ai_error = ai.last_error if cap.message and analysis is None else ""
-        if ai_error:
-            await db_log("ai_failed", ai_error)
+        analysis = await ai.analyze(text, targets, rules, examples) if text else None
+        by_rules = False
+        if text and analysis is None:
+            await db_log("ai_failed", ai.last_error)
+            analysis, by_rules = fallback.analyze(text, targets), True  # AI'siz zaxira qoidalar
 
         async with Session() as s:
             post = SourcePost(
@@ -129,12 +152,13 @@ class Pipeline:
             for t in targets:
                 d = analysis.for_target(t.id) if analysis else None
                 action, reason = decide(t.mode, d, settings.confidence_threshold)
-                if cap.message and analysis is None and action == "send":
-                    # Aloqa bloki topilmagan holda ko'r-ko'rona yubormaymiz
-                    # Qisqa sabab; texnik tafsilot faqat Jurnal sahifasida
-                    action, reason = "ask", "AI ishlamadi: aloqa bloki tekshirilmagan"
-                elif ai_error and action == "ask" and t.mode != "manual":
-                    reason = "AI ishlamadi: aloqa bloki tekshirilmagan"  # barcha rejimlarda bir xil matn
+                if by_rules and t.mode != "manual":
+                    reason = "AI'siz qoidalar: " + reason.replace("AI ishonchi past", "ishonch past")
+                quiet = False
+                past = next((m for m in memory if m.target_id == t.id and similar(m.text, text)), None)
+                if past is not None and t.mode != "manual":
+                    # Admin o'xshash post bo'yicha qaror bergan: qayta so'ralmaydi
+                    action, reason, quiet = ("send" if past.send else "skip"), "Avvalgi qaroringiz bo'yicha", True
                 if not all(is_supported(m) for m in msgs):
                     action, reason = "ask", "Post turi avtomatik ko'chirilmaydi (so'rovnoma va h.k.)"
                 delivery = Delivery(
@@ -145,15 +169,15 @@ class Pipeline:
                 )
                 s.add(delivery)
                 await s.flush()
-                plan.append((delivery.id, t, action, reason))
+                plan.append((delivery.id, t, action, reason, quiet))
             await s.commit()
             post_id = post.id
 
         await db_log("new_post", f"post={post_id} ids={ids}")
-        for delivery_id, target, action, reason in plan:
+        for delivery_id, target, action, reason, quiet in plan:
             if action == "send":
                 await self.publish(delivery_id)
-            elif self.notifier:
+            elif self.notifier and not quiet:
                 await self.notifier.ask(delivery_id, target, cap.message or "(matnsiz post)", reason, skipped=action == "skip")
 
     # ---------- joylash ----------
@@ -219,10 +243,26 @@ class Pipeline:
         await db_log("sent", f"delivery={delivery_id} target={target.username}")
         return True
 
-    async def reject(self, delivery_id: int) -> None:
+    async def _remember(self, delivery_id: int, send: bool) -> None:
+        """Admin qarorini eslab qoladi: o'xshash post kelganda shu qaror qo'llanadi."""
         async with Session() as s:
             d = await s.get(Delivery, delivery_id)
-            if d.status in ("pending", "skipped"):
+            post = await s.get(SourcePost, d.post_id) if d else None
+            if post is None or not post.text or d.status not in ("pending", "skipped", "failed"):
+                return
+            s.add(Decision(target_id=d.target_id, text=post.text, send=send))
+            await s.commit()
+
+    async def approve(self, delivery_id: int) -> bool:
+        """Admin "Yuborish" ni bosdi: qaror eslab qolinadi va post joylanadi."""
+        await self._remember(delivery_id, True)
+        return await self.publish(delivery_id)
+
+    async def reject(self, delivery_id: int) -> None:
+        await self._remember(delivery_id, False)
+        async with Session() as s:
+            d = await s.get(Delivery, delivery_id)
+            if d and d.status in ("pending", "skipped", "failed"):
                 d.status = "rejected"
                 await s.commit()
 
@@ -245,11 +285,10 @@ class Pipeline:
             targets = list((await s.execute(select(Target))).scalars())
             if text_changed:
                 rules = [r.text for r in (await s.execute(select(Rule).where(Rule.active))).scalars()]
-                analysis = await ai.analyze(msg.message or "", [t for t in targets if t.active], rules) if msg.message else None
+                active = [t for t in targets if t.active]
+                analysis = await ai.analyze(msg.message or "", active, rules) if msg.message else None
                 if msg.message and analysis is None:
-                    if self.notifier:
-                        await self.notifier.say("Manba post tahrirlandi, lekin AI ishlamadi — nusxalar yangilanmadi. Qo'lda tekshiring.")
-                    return
+                    analysis = fallback.analyze(msg.message, active)
                 post.text, post.text_hash = msg.message or "", new_hash
                 post.cta_start_line = analysis.cta_start_line if analysis else None
                 post.block_type = analysis.block_type if analysis else None

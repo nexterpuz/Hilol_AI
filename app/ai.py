@@ -36,7 +36,8 @@ qismga kirmaydi. block_type "none" bo'lsa null qaytar.
 ishonching (confidence, 0..1) va qisqa sabab (reason, o'zbek tilida). Umumiy yangiliklar \
 (yangi kitob, aksiya, umumiy e'lon) hamma filialga mos. Faqat ayrim filial(lar)ga \
 tegishli yangilik (masalan, bitta filialning ish tartibi) faqat o'sha filial kanaliga \
-yuboriladi. Admin qoidalari ustun turadi. Ishonching komil bo'lmasa confidence'ni past \
+yuboriladi. Admin qoidalari ustun turadi. Admin oldingi qarorlari berilgan bo'lsa, ular \
+adminning xohishini ko'rsatadi: o'xshash postda xuddi shunday qaror qil va ishonchni yuqori qo'y. Ishonching komil bo'lmasa confidence'ni past \
 qo'y — bunda qarorni admin qabul qiladi."""
 
 
@@ -74,7 +75,7 @@ def _get_client() -> anthropic.AsyncAnthropic:
     return _client
 
 
-async def analyze(text: str, targets: list, rules: list[str]) -> Analysis | None:
+async def analyze(text: str, targets: list, rules: list[str], examples: list[str] | None = None) -> Analysis | None:
     """Tahlil natijasi yoki None (xato/rad bo'lsa — bunda qaror adminga qoladi)."""
     channels = "\n".join(
         f"- target_id={t.id}; nomi: {t.name}; kalit so'zlar: {t.keywords or '-'}" for t in targets
@@ -83,6 +84,8 @@ async def analyze(text: str, targets: list, rules: list[str]) -> Analysis | None
     prompt = (
         f"<filial_kanallari>\n{channels}\n</filial_kanallari>\n\n"
         f"<admin_qoidalari>\n{rules_text}\n</admin_qoidalari>\n\n"
+        + (f"<admin_oldingi_qarorlari>\n{chr(10).join(examples)}\n</admin_oldingi_qarorlari>\n\n" if examples else "")
+        +
         f"<post>\n{numbered_lines(text)}\n</post>"
     )
     global last_error
