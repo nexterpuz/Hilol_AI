@@ -108,7 +108,7 @@ class AdminBot:
         names = ", ".join(t.name for t in bound)
         await event.respond(
             f"Tasdiqlandi. Siz bog'langan filial: {names}.\n"
-            "Endi shu filial uchun yangi sotuv postlari sizga keladi: kitob sotuvga tayyor bo'lgach «Kanalga joylash» ni bosasiz.\n"
+            "Endi yangi nashr va «tez kunda» postlari sizga keladi: kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosasiz.\n"
             "Kutayotgan postlarni ko'rish: /navbat",
             buttons=Button.clear(),
         )

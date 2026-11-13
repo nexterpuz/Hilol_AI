@@ -215,13 +215,18 @@ async def scenario(monkeypatch):
         d11 = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()))).scalars().first()
     assert d11.status == "pending" and "ариза юбориш" in d11.reason
 
-    # filial tasdig'i: sotuv posti menejerga boradi, tabrik posti avtomatik chiqadi
+    # filial tasdig'i: faqat yangi nashr / "tez kunda" posti menejerga boradi
     async with Session() as s:
         t = (await s.execute(select(Target).where(Target.username == "p_Hilol_qoqon_test"))).scalars().first()
         t.branch_approval = True
         await s.commit()
         qoqon_id = t.id
-    store[12] = mk(12, "Yangi «Ilm» kitobi\nNarxi 50 000\nManzillarimiz\n@hilol", photo_id=70)
+    # oddiy sotuv posti filial tasdig'i yoqilgan kanalga ham kutmasdan chiqadi
+    store[16] = mk(16, "«Odob» kitobi sotuvda\nNarxi 30 000\nManzillarimiz\n@hilol", photo_id=71)
+    n = len(only(c.sent))
+    await p.on_new([store[16]])
+    assert len(only(c.sent)) == n + 2
+    store[12] = mk(12, "Yangi «Ilm» kitobi nashrdan chiqdi\nNarxi 50 000\nManzillarimiz\n@hilol", photo_id=70)
     n = len(only(c.sent))
     await p.on_new([store[12]])
     assert len(only(c.sent)) == n + 1  # faqat Marg'ilon; Qo'qon menejer tasdig'ini kutadi
@@ -438,3 +443,11 @@ def test_bot_manager_binding_and_permissions():
     assert calls == [("publish", ids[1]), ("reject", ids[2], True)]
     assert foreign == ["Ruxsat yo'q"]
     assert any(u == [502] and "Kutmoqda" in t for u, t in sent)  # bog'langach kutayotgan post yuborildi
+
+
+def test_branch_words_default():
+    from app.pipeline import DEFAULT_BRANCH_WORDS, ask_word_in
+
+    assert ask_word_in("🎉 «Таъвилот ал-Қуръон» китобининг 17–18-жузи нашр қилинди", DEFAULT_BRANCH_WORDS)
+    assert ask_word_in("Тез кунда барча филиалларимизда сотувда бўлади", DEFAULT_BRANCH_WORDS)
+    assert not ask_word_in("✨ «Кифоя» – фиқҳ илмини ўрганмоқчи бўлганлар учун\n👉 Нархи: 345 000 сўм", DEFAULT_BRANCH_WORDS)

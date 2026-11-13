@@ -34,7 +34,7 @@
 <input id="mgr" name="manager_phones" type="text" value="{{ t.manager_phones if t }}" placeholder="+998 90 123 45 67, +998 91 765 43 21">
 <div class="muted">Shu raqam egasi botga /start bosib, raqamini ulashsa, shu filial postlarini o'zi tasdiqlay oladi. Bir nechta raqamni vergul bilan ajrating.{% if t and t.manager_ids %} Hozir bog'langan: {{ t.manager_ids|length }} kishi.{% endif %}</div>
 </div>
-<label class="check"><input type="checkbox" name="branch_approval" value="1" {{ 'checked' if t and t.branch_approval }}> Sotuv postlari filial menejeri tasdig'idan keyin chiqsin (kitob filialga kelgach)</label>
+<label class="check"><input type="checkbox" name="branch_approval" value="1" {{ 'checked' if t and t.branch_approval }}> Yangi nashr va «tez kunda» postlari filial menejeri tasdig'idan keyin chiqsin (oddiy sotuv postlari kutmaydi)</label>
 <div class="grid">
 <label class="check"><input type="checkbox" name="sync_edits" value="1" {{ 'checked' if not t or t.sync_edits }}> Manbadagi tahrirni sinxronlash</label>
 <label class="check"><input type="checkbox" name="sync_deletes" value="1" {{ 'checked' if not t or t.sync_deletes }}> Manbada o'chirilsa, bu yerdan ham o'chirish</label>

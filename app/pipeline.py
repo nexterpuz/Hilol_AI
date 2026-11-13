@@ -44,6 +44,11 @@ def closing_for(target, block_type: str | None) -> str:
 DEFAULT_ASK_WORDS = "вакансия, vakansiya, ишга таклиф, ариза юбориш"
 
 
+# Filial tasdig'i yoqilgan kanalda shu so'zlar uchragan post menejer tasdig'ini kutadi:
+# yangi nashr hali filialga yetib kelmagan bo'lishi mumkin. Oddiy sotuv postlari kutmaydi.
+DEFAULT_BRANCH_WORDS = "тез кунда, tez kunda, нашрдан чиқди, нашр қилинди, nashrdan chiqdi, nashr qilindi"
+
+
 def ask_word_in(text: str, words: str) -> str:
     """Matnda tasdiq talab qiladigan so'z bormi: topilgan so'z yoki bo'sh satr."""
     low = (text or "").lower()
@@ -160,6 +165,8 @@ class Pipeline:
             memory = list((await s.execute(select(Decision).order_by(Decision.id.desc()).limit(300))).scalars())
             row = await s.get(Setting, "ask_words")
             ask_words = row.value if row is not None else DEFAULT_ASK_WORDS
+            row = await s.get(Setting, "branch_words")
+            branch_words = row.value if row is not None else DEFAULT_BRANCH_WORDS
             pause_row = await s.get(Setting, "paused")
             paused = bool(pause_row and pause_row.value == "1")
 
@@ -204,8 +211,8 @@ class Pipeline:
                     # Admin o'xshash post bo'yicha qaror bergan: qayta so'ralmaydi
                     action, reason, quiet = ("send" if past.send else "skip"), "Avvalgi qaroringiz bo'yicha", True
                 branch = False
-                if t.branch_approval and analysis is not None and analysis.block_type == "contact" and action == "send":
-                    # Sotuv posti: kitob filialga kelgach, filial menejeri o'zi tasdiqlaydi
+                if t.branch_approval and action == "send" and ask_word_in(text, branch_words):
+                    # Yangi nashr yoki "tez kunda": kitob filialga kelgach, menejer o'zi tasdiqlaydi
                     action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True
                 if paused:
                     action, reason, quiet, branch = "ask", "Favqulodda to'xtatish yoqilgan", True, False

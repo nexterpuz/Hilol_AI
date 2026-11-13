@@ -656,22 +656,25 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         async with Session() as s:
             items = list((await s.execute(select(Rule).order_by(Rule.id))).scalars())
             row = await s.get(Setting, "ask_words")
-        from .pipeline import DEFAULT_ASK_WORDS
+            brow = await s.get(Setting, "branch_words")
+        from .pipeline import DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS
 
         return page(
             request, "rules.html", rules=items, ask_words=row.value if row is not None else DEFAULT_ASK_WORDS,
+            branch_words=brow.value if brow is not None else DEFAULT_BRANCH_WORDS,
             saved=request.session.pop("saved", ""),
         )
 
     @app.post("/rules/ask-words")
-    async def ask_words_save(request: Request, words: str = Form("")):
+    async def ask_words_save(request: Request, words: str = Form(""), kind: str = Form("ask_words")):
+        key = kind if kind in ("ask_words", "branch_words") else "ask_words"
         clean = ", ".join(w.strip() for w in words.replace("\n", ",").split(",") if w.strip())
         async with Session() as s:
-            row = await s.get(Setting, "ask_words")
+            row = await s.get(Setting, key)
             if row is not None:
                 row.value = clean
             else:
-                s.add(Setting(key="ask_words", value=clean))
+                s.add(Setting(key=key, value=clean))
             await s.commit()
         request.session["saved"] = "So'zlar saqlandi."
         return _go("/rules")
