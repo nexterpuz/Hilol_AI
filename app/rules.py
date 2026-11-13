@@ -30,7 +30,12 @@ CITY_GROUPS = (
     ("олмалиқ", "olmaliq"), ("ангрен", "angren"), ("шаҳрисабз", "shahrisabz"), ("денов", "denov"),
     ("асака", "asaka"),
 )
-STORE_WORDS = ("дўкон", "дукон", "do'kon", "do‘kon", "dokon", "филиал", "filial")
+STORE_WORDS = (
+    "дўкон", "дукон", "do'kon", "do‘kon", "dokon", "филиал", "filial",
+    # ish tartibiga oid so'zlar: "Марғилонда бугун ишламаймиз" kabi e'lonlar
+    "ишламай", "ёпиқ", "очилди", "очилиш", "иш вақти", "иш тартиби", "кўчди",
+    "ishlamay", "yopiq", "ochildi", "ochilish", "ish vaqti", "ish tartibi", "ko'chdi",
+)
 HEAD_STORE = ("бош дўкон", "бош дукон", "bosh do'kon", "bosh do‘kon", "bosh dokon")
 
 
@@ -107,8 +112,10 @@ def analyze(text: str, targets: list) -> Analysis:
         if not is_local:
             decisions.append(TargetDecision(target_id=t.id, send=True, confidence=base, reason="Qolipga mos umumiy post" if base >= 0.8 else "Post qolipga mos emas"))
         elif t.id in named:
-            decisions.append(TargetDecision(target_id=t.id, send=True, confidence=base, reason="Postda shu filial tilga olingan"))
+            decisions.append(TargetDecision(target_id=t.id, send=True, confidence=base, reason="Post shu filialga tegishli", scope="own"))
+        elif cities or named:
+            # Boshqa filialning e'loni: bu kanalga chiqmaydi va so'ralmaydi
+            decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.9, reason="Post boshqa filialga tegishli", scope="other"))
         else:
-            why = "Postda boshqa filial do'koni tilga olingan" if (cities or named) else "Post bosh do'konga tegishli"
-            decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.6, reason=why))
+            decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.6, reason="Post bosh do'konga tegishli"))
     return Analysis(block_type=block_type, cta_start_line=start, decisions=decisions)

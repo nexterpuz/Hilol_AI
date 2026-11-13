@@ -36,7 +36,9 @@ qismga kirmaydi. block_type "none" bo'lsa null qaytar.
 ishonching (confidence, 0..1) va qisqa sabab (reason, o'zbek tilida). Umumiy yangiliklar \
 (yangi kitob, aksiya, umumiy e'lon) hamma filialga mos. Faqat ayrim filial(lar)ga \
 tegishli yangilik (masalan, bitta filialning ish tartibi) faqat o'sha filial kanaliga \
-yuboriladi. Admin qoidalari ustun turadi. Admin oldingi qarorlari berilgan bo'lsa, ular \
+yuboriladi. Har bir filial uchun scope ni ham belgila: \
+"own" — post aynan shu filialga tegishli (unda send=true), "other" — post boshqa filialga \
+tegishli (unda send=false, ishonch yuqori), "general" — umumiy post. Admin qoidalari ustun turadi. Admin oldingi qarorlari berilgan bo'lsa, ular \
 adminning xohishini ko'rsatadi: o'xshash postda xuddi shunday qaror qil va ishonchni yuqori qo'y. Ishonching komil bo'lmasa confidence'ni past \
 qo'y — bunda qarorni admin qabul qiladi."""
 
@@ -46,6 +48,8 @@ class TargetDecision(BaseModel):
     send: bool
     confidence: float = Field(description="0 dan 1 gacha")
     reason: str
+    # general — umumiy post; own — aynan shu filialga tegishli; other — boshqa filialga tegishli
+    scope: Literal["general", "own", "other"] = "general"
 
 
 class Analysis(BaseModel):

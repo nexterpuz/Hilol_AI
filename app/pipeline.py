@@ -227,12 +227,19 @@ class Pipeline:
                 if past is not None and t.mode != "manual":
                     # Admin o'xshash post bo'yicha qaror bergan: qayta so'ralmaydi
                     action, reason, quiet = ("send" if past.send else "skip"), "Avvalgi qaroringiz bo'yicha", True
-                branch = False
-                if t.branch_approval and action == "send" and ask_word_in(text, branch_words):
+                branch = local = False
+                scope = getattr(d, "scope", "general") if d is not None else "general"
+                if scope == "own" and t.mode != "manual":
+                    # Aynan shu filialga tegishli e'lon: har safar filial menejeridan so'raladi
+                    # (xotiradagi avvalgi qaror ham buni chetlab o'tmaydi)
+                    action, reason, quiet, branch, local = "ask", "Filialga tegishli post: filial tasdig'i kutilmoqda", False, True, True
+                elif scope == "other" and t.mode != "manual":
+                    action, reason, quiet = "skip", "Post boshqa filialga tegishli", True  # so'ralmaydi ham
+                elif t.branch_approval and action == "send" and ask_word_in(text, branch_words):
                     # Yangi nashr yoki "tez kunda": kitob filialga kelgach, menejer o'zi tasdiqlaydi
                     action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True
                 if paused:
-                    action, reason, quiet, branch = "ask", "Favqulodda to'xtatish yoqilgan", True, False
+                    action, reason, quiet, branch, local = "ask", "Favqulodda to'xtatish yoqilgan", True, False, False
                 if not all(is_supported(m) for m in msgs):
                     action, reason = "ask", "Post turi avtomatik ko'chirilmaydi (so'rovnoma va h.k.)"
                 delivery = Delivery(
@@ -243,17 +250,17 @@ class Pipeline:
                 )
                 s.add(delivery)
                 await s.flush()
-                plan.append((delivery.id, t, action, reason, quiet, branch))
+                plan.append((delivery.id, t, action, reason, quiet, branch, local))
             await s.commit()
             post_id = post.id
             views = {t.id: preview_text(post, t) for t in targets} if text else {}
 
         await db_log("new_post", f"post={post_id} ids={ids}")
-        for delivery_id, target, action, reason, quiet, branch in plan:
+        for delivery_id, target, action, reason, quiet, branch, local in plan:
             if action == "send":
                 await self.publish(delivery_id)
             elif self.notifier and branch:
-                await self.notifier.ask_branch(delivery_id, target, views.get(target.id) or "(matnsiz post)")
+                await self.notifier.ask_branch(delivery_id, target, views.get(target.id) or "(matnsiz post)", local=local)
             elif self.notifier and not quiet:
                 await self.notifier.ask(delivery_id, target, views.get(target.id) or "(matnsiz post)", reason, skipped=action == "skip")
 
@@ -337,6 +344,8 @@ class Pipeline:
             post = await s.get(SourcePost, d.post_id) if d else None
             if post is None or not post.text or d.status not in ("pending", "skipped", "failed"):
                 return
+            if (d.reason or "").startswith(("Filial", "Post boshqa filialga")):
+                return  # filialga xos postlar har safar filial menejeridan so'raladi
             s.add(Decision(target_id=d.target_id, text=post.text, send=send))
             await s.commit()
 

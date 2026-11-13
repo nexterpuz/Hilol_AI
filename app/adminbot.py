@@ -147,16 +147,23 @@ class AdminBot:
             self._buttons(delivery_id, skipped),
         )
 
-    async def ask_branch(self, delivery_id: int, target, text: str) -> None:
-        """Sotuv postini filial menejer(lar)iga yuboradi; menejer bog'lanmagan bo'lsa — bosh adminga."""
-        body = (
-            f"Yangi post — {target.name}\n"
-            "Kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosing.\n\nKanalda shunday chiqadi:\n\n" + preview(text)
-        )
+    async def ask_branch(self, delivery_id: int, target, text: str, local: bool = False) -> None:
+        """Postni filial menejer(lar)iga tasdiqlash uchun yuboradi; menejer bog'lanmagan bo'lsa — bosh adminga."""
+        if local:
+            intro = "Bu post aynan sizning filialingizga tegishli. Kanalingizga joylansinmi?"
+            why = "Filialga tegishli post"
+        else:
+            intro = "Kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosing."
+            why = "Filial tasdig'i kutilmoqda"
+        body = f"Yangi post — {target.name}\n{intro}\n\nKanalda shunday chiqadi:\n\n{preview(text)}"
         buttons = [Button.inline("Kanalga joylash", data=f"ok:{delivery_id}"), Button.inline("Rad etish", data=f"no:{delivery_id}")]
         managers = list((target.manager_ids or {}).keys())
         if not managers or not await self.send(managers, body, buttons):
-            await self.say(f"Filial menejeri bog'lanmagan — {target.name}\nSabab: Filial tasdig'i kutilmoqda\n\n{preview(text)}", self._buttons(delivery_id))
+            # Menejer botga /start bosmagan yoki botni bloklagan: post kanalga o'zi chiqmaydi, bosh admin hal qiladi
+            await self.say(
+                f"Filial menejeri botga bog'lanmagan — {target.name}\nSabab: {why}\n\nKanalda shunday chiqadi:\n\n{preview(text)}",
+                self._buttons(delivery_id),
+            )
 
     # ---------- menejerlarga xabar ----------
 

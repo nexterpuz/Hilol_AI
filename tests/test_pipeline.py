@@ -54,8 +54,10 @@ class Bot:
     async def ask(self, delivery_id, target, text, reason, skipped):
         self.msgs.append(("ask", delivery_id, skipped))
 
-    async def ask_branch(self, delivery_id, target, text):
+    async def ask_branch(self, delivery_id, target, text, local=False):
         self.msgs.append(("branch", delivery_id, target.username))
+        if local:
+            self.msgs.append(("local", delivery_id, target.username))
 
 
 async def fake_analyze(text, targets, rules, examples=None):
@@ -200,6 +202,34 @@ async def scenario(monkeypatch):
         assert d.status == "sent" and d.reason.startswith("AI'siz qoidalar")
         ev = (await s.execute(select(Event).where(Event.kind == "ai_failed"))).scalars().first()
         assert ev is not None and "mablag' tugagan" in ev.detail  # tafsilot faqat jurnalda
+    # filialga xos e'lon: faqat o'sha filial menejeridan so'raladi, boshqalar jim o'tkazib yuboradi
+    store[20] = mk(20, "Марғилондаги дўконимиз бугун ва эртага ишламайди\n\n@hilolnashr")
+    n, q = len(only(c.sent)), len(b.msgs)
+    await p.on_new([store[20]])
+    async with Session() as s:
+        ds = {d.target_id: d for d in (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()).limit(2))).scalars()}
+        names = {t.id: t.username for t in (await s.execute(select(Target).where(Target.id.in_(mine)))).scalars()}
+    marg = next(d for tid, d in ds.items() if "margilon" in names[tid])
+    qoq = next(d for tid, d in ds.items() if "qoqon" in names[tid])
+    assert len(only(c.sent)) == n  # hech qaysi kanalga o'zi chiqmadi
+    assert marg.status == "pending" and marg.reason.startswith("Filialga tegishli post")
+    assert ("local", marg.id, "p_Hilol_margilon_test") in b.msgs[q:]
+    assert qoq.status == "skipped" and qoq.reason == "Post boshqa filialga tegishli"
+    assert not any(isinstance(m, tuple) and m[1] == qoq.id for m in b.msgs[q:])  # Qo'qon uchun so'ralmadi
+    # tasdiqlansa chiqadi, lekin eslab qolinmaydi: o'xshash post yana menejerdan so'raladi
+    async with Session() as s:
+        from app.db import Decision
+
+        mem = len(list((await s.execute(select(Decision))).scalars()))
+    assert await p.approve(marg.id) and len(only(c.sent)) == n + 1
+    store[21] = mk(21, "Марғилондаги дўконимиз бугун ва эртага ишламайди!\n\n@hilolnashr")
+    n = len(only(c.sent))
+    await p.on_new([store[21]])
+    async with Session() as s:
+        assert len(list((await s.execute(select(Decision))).scalars())) == mem
+        again = (await s.execute(select(Delivery).where(Delivery.target_id == marg.target_id).order_by(Delivery.id.desc()))).scalars().first()
+    assert len(only(c.sent)) == n and again.status == "pending" and again.reason.startswith("Filialga tegishli post")
+
     # AI'siz, qolipga mos kelmagan uzun post: so'raladi
     store[10] = mk(10, "Bugun nashriyotimizda katta yangilik. " * 12)
     n = len(only(c.sent))
@@ -332,8 +362,8 @@ def test_rules_relevance():
     general = fallback.analyze("Yangi kitob chiqdi\n\n@hilolnashr", targets)
     assert all(d.send and d.confidence >= 0.8 for d in general.decisions)
     local = fallback.analyze("Qo'qon filialimiz bugun ishlamaydi\n\n@hilolnashr", targets)
-    assert local.for_target(1).send and local.for_target(1).confidence >= 0.8
-    assert not local.for_target(2).send and local.for_target(2).confidence < 0.8  # admindan so'raladi
+    assert local.for_target(1).send and local.for_target(1).scope == "own"
+    assert not local.for_target(2).send and local.for_target(2).scope == "other"
 
 
 def test_rules_real_post_shapes():
@@ -343,20 +373,23 @@ def test_rules_real_post_shapes():
     targets = [T(id=1, name="Qo'qon filiali", keywords="Qo'qon"), T(id=2, name="Marg'ilon", keywords=""), T(id=3, name="Namangan do'koni", keywords="")]
     closed = "✨ Бугун ва эртага Намангандаги дўконимиз ишламайди\n\n⏺ Бошқа дўконларимиз одатдаги тартибда ишлайди.\n\n📍 Манзилларимиз\n\n@hilolnashr"
     a = fallback.analyze(closed, targets)
-    assert a.for_target(3).send and a.for_target(3).confidence >= 0.8  # Namangan kanaliga chiqadi
-    assert not a.for_target(1).send and a.for_target(1).confidence < 0.8  # qolganlarida so'raladi
-    assert not a.for_target(2).send
+    assert a.for_target(3).send and a.for_target(3).scope == "own"  # Namangan menejeridan so'raladi
+    assert not a.for_target(1).send and a.for_target(1).scope == "other"  # qolganlariga chiqmaydi, so'ralmaydi
+    assert not a.for_target(2).send and a.for_target(2).scope == "other"
+    # do'kon so'zisiz, ish tartibi so'zi bilan ham taniydi
+    w = fallback.analyze("Марғилонда бугун ва эртага ишламаймиз\n\n@hilolnashr", targets)
+    assert w.for_target(2).scope == "own" and w.for_target(1).scope == "other"
     # kirillcha yozilgan shahar lotincha nomlangan kanalga mos keladi
     b = fallback.analyze("Қўқондаги дўконимиз янги манзилга кўчди\n\n@hilolnashr", targets)
-    assert b.for_target(1).send and not b.for_target(2).send
+    assert b.for_target(1).scope == "own" and b.for_target(2).scope == "other"
     # bosh do'kondagi tadbir: hech bir filialga avtomatik chiqmaydi
     event = "Марҳамат, навбатдаги илм мажлисига ташриф буюринг! 😊\n\n📆 17 ноябрь 14:00\n\n📍 «Hilol-Nashr» бош дўкони\n\n@hilolnashr"
     c = fallback.analyze(event, targets)
-    assert all(not d.send and d.confidence < 0.8 for d in c.decisions)
+    assert all(not d.send and d.confidence < 0.8 and d.scope == "general" for d in c.decisions)
     # kitob tavsifidagi shahar nomi va umumiy "do'konlarimizdan" so'zi — oddiy sotuv posti
     sale = "🔥 Имом Бухорий ҳазратларининг ҳаёти ҳақидаги асар. Муаллиф Тошкентда яшаган.\n📚 Китобни дўконларимиздан сотиб олинг.\n👉 Нархи: 43 000 сўм\n\n📍 Манзилларимиз\n📞 +998712175999\n@hilolnashr"
     d = fallback.analyze(sale, targets)
-    assert d.block_type == "contact" and all(x.send and x.confidence >= 0.8 for x in d.decisions)
+    assert d.block_type == "contact" and all(x.send and x.confidence >= 0.8 and x.scope == "general" for x in d.decisions)
 
 
 def test_ask_words():
