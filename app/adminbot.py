@@ -20,10 +20,12 @@ BTN_WEEK, BTN_MONTH = "📊 Haftalik hisobot", "📅 Oylik hisobot"
 BTN_QUEUE, BTN_STATE = "📥 Kutayotgan postlar", "ℹ️ Holat"
 BTN_STOP, BTN_RESUME = "⏸ To'xtatish", "▶️ Davom ettirish"
 BTN_MANAGERS = "👥 Menejerlar"
+BTN_MESSAGE = "✉️ Xabar yuborish"
+MESSAGE_HEAD = "📢 Bosh admindan xabar:\n\n"
 ALIASES = {
     BTN_WEEK.lower(): "/hisobot", BTN_MONTH.lower(): "/hisobot_oy", BTN_QUEUE.lower(): "/navbat",
     BTN_STATE.lower(): "/holat", BTN_STOP.lower(): "/stop", BTN_RESUME.lower(): "/resume",
-    BTN_MANAGERS.lower(): "/menejerlar",
+    BTN_MANAGERS.lower(): "/menejerlar", BTN_MESSAGE.lower(): "/xabar",
 }
 
 
@@ -39,7 +41,7 @@ def keyboard(is_admin: bool, is_manager: bool, paused: bool = False):
     if second:
         rows.append(second)
     if is_admin:
-        rows.append([Button.text(BTN_MANAGERS)])
+        rows.append([Button.text(BTN_MANAGERS), Button.text(BTN_MESSAGE)])
     return rows
 
 
@@ -87,6 +89,7 @@ class AdminBot:
     def __init__(self):
         self.bot = TelegramClient(StringSession(), settings.api_id, settings.api_hash)
         self.pipeline = None  # agent ulanganda o'rnatiladi
+        self._compose: dict[int, object] = {}  # xabar yozayotgan admin -> "all" yoki filial id
 
     async def start(self) -> None:
         await self.bot.start(bot_token=settings.bot_token)
@@ -148,6 +151,57 @@ class AdminBot:
         managers = list((target.manager_ids or {}).keys())
         if not managers or not await self.send(managers, body, buttons):
             await self.say(f"Filial menejeri bog'lanmagan — {target.name}\nSabab: Filial tasdig'i kutilmoqda\n\n{preview(text)}", self._buttons(delivery_id))
+
+    # ---------- menejerlarga xabar ----------
+
+    async def _recipients(self, choice) -> tuple[list[str], str]:
+        """Tanlov bo'yicha qabul qiluvchilar (takrorsiz) va tanlov nomi."""
+        async with Session() as s:
+            targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
+        if choice != "all":
+            targets = [t for t in targets if t.id == choice]
+        users = list(dict.fromkeys(uid for t in targets for uid in (t.manager_ids or {})))
+        label = "barcha menejerlar" if choice == "all" else (targets[0].name if targets else "filial")
+        return users, label
+
+    async def _message_menu(self, event) -> None:
+        async with Session() as s:
+            targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
+        with_mgr = [t for t in targets if t.manager_ids]
+        if not with_mgr:
+            await event.respond("Hali hech bir filial menejeri botga bog'lanmagan. «👥 Menejerlar» tugmasi orqali holatni ko'ring.")
+            return
+        total = len({uid for t in with_mgr for uid in t.manager_ids})
+        rows = [[Button.inline(f"Barcha menejerlarga ({total})", data="msg:all")]]
+        rows += [[Button.inline(f"{t.name} ({len(t.manager_ids)})", data=f"msg:{t.id}")] for t in with_mgr]
+        rows.append([Button.inline("Bekor qilish", data="msg:cancel")])
+        await event.respond("Xabar kimga yuborilsin?", buttons=rows)
+
+    async def _deliver_message(self, event, choice) -> None:
+        users, label = await self._recipients(choice)
+        if not users:
+            await event.respond(f"Yuborilmadi: {label} uchun bog'langan menejer yo'q.")
+            return
+        text = event.raw_text or ""
+        media = getattr(event.message, "media", None)
+        if media is not None:
+            sent = await self.send_media(users, media, MESSAGE_HEAD + text)
+        else:
+            sent = await self.send(users, MESSAGE_HEAD + text)
+        note = f"Yuborildi — {label}: {sent} / {len(users)} kishiga yetdi."
+        if sent < len(users):
+            note += " Yetmaganlar botni bloklagan yoki o'chirgan bo'lishi mumkin."
+        await event.respond(note)
+
+    async def send_media(self, user_ids, media, caption: str) -> int:
+        sent = 0
+        for uid in user_ids:
+            try:
+                await self.bot.send_file(int(uid), media, caption=caption, parse_mode=None)
+                sent += 1
+            except Exception:
+                log.exception("Media xabar yuborilmadi: %s", uid)
+        return sent
 
     # ---------- menejerlar ----------
 
@@ -221,6 +275,14 @@ class AdminBot:
             await self._bind(event)
             await self._touch(uid)
             return
+        if is_admin and uid in self._compose:
+            choice = self._compose.pop(uid)
+            if not text.startswith("/"):  # buyruq yoki boshqa tugma bosilsa — yozish bekor qilinadi
+                await self._deliver_message(event, choice)
+                return
+            if text == "/bekor":
+                await event.respond("Xabar yuborish bekor qilindi.")
+                return
         mine = await self._targets_of(uid)
         if mine:
             await self._touch(uid)
@@ -236,6 +298,8 @@ class AdminBot:
         elif is_admin and text in ("/resume", "/davom"):
             await set_paused(False)
             await event.respond("Agent davom ettirildi. To'xtatilgan paytda to'plangan postlar Tasdiq navbatida turibdi.", buttons=await kb())
+        elif is_admin and text == "/xabar":
+            await self._message_menu(event)
         elif is_admin and text == "/menejerlar":
             await event.respond(await managers_report(), buttons=await kb(), parse_mode=None)
         elif is_admin and text == "/holat":
@@ -270,6 +334,28 @@ class AdminBot:
 
     async def _on_click(self, event) -> None:
         action, _, raw_id = event.data.decode().partition(":")
+        if action == "msg":
+            if event.sender_id not in settings.admin_ids:
+                await event.answer("Ruxsat yo'q", alert=True)
+                return
+            if raw_id == "cancel":
+                self._compose.pop(event.sender_id, None)
+                await event.answer("Bekor qilindi")
+                await event.edit("Xabar yuborish bekor qilindi.", buttons=None)
+                return
+            choice = "all" if raw_id == "all" else int(raw_id) if raw_id.isdigit() else None
+            if choice is None:
+                return
+            users, label = await self._recipients(choice)
+            self._compose[event.sender_id] = choice
+            await event.answer("Xabarni yozing")
+            await event.edit(
+                f"Kimga: {label} ({len(users)} kishi).\n"
+                "Endi xabar matnini yozib yuboring (rasm yoki fayl ham bo'ladi) — keyingi xabaringiz ularga jo'natiladi.\n"
+                "Bekor qilish: /bekor",
+                buttons=None,
+            )
+            return
         if not raw_id.isdigit() or self.pipeline is None:
             await event.answer("Agent hozir ulanmagan", alert=True)
             return

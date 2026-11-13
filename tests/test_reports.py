@@ -84,8 +84,8 @@ def test_bot_keyboard_and_button_presses(monkeypatch):
         return [b.button.text for row in rows for b in row]
 
     assert labels(keyboard(False, True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE]
-    assert labels(keyboard(True, False)) == [BTN_WEEK, BTN_MONTH, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS]
-    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS]
+    assert labels(keyboard(True, False)) == [BTN_WEEK, BTN_MONTH, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
+    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
 
     class Ev:
         def __init__(self, sender, text):
@@ -167,3 +167,78 @@ def test_managers_report():
     assert "❌ M-Bosmagan" in text and "⚠️ M-Raqamsiz" in text and "raqam kiritilmagan" in text
     assert "Jami: 4 ta filialdan 2 tasida menejer bog'langan." in text and text == again
     assert not any("Filial menejerlari" in t for t in stranger)  # menejer bu ro'yxatni ko'ra olmaydi
+
+
+def test_admin_message_to_managers():
+    """Bosh admin bitta filial menejeriga yoki barcha menejerlarga xabar yuboradi."""
+    from types import SimpleNamespace as NS
+
+    from sqlalchemy import update
+
+    from app.adminbot import BTN_MESSAGE, BTN_WEEK, MESSAGE_HEAD, AdminBot
+
+    class Ev:
+        def __init__(self, sender, text="", data=b""):
+            self.sender_id, self.raw_text, self.data = sender, text, data
+            self.message, self.out, self.answers, self.menu = NS(contact=None, media=None), [], [], None
+
+        async def respond(self, text, buttons=None, parse_mode=None):
+            self.out.append(text)
+            if isinstance(buttons, list) and buttons and hasattr(buttons[0][0], "type"):
+                self.menu = [(b.text, b.type.data.decode()) for row in buttons for b in row]
+
+        async def answer(self, text="", alert=False):
+            self.answers.append(text)
+
+        async def edit(self, text, buttons=None, parse_mode=None):
+            self.out.append(text)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            a = Target(name="X-Qo'qon", username="msg_1", manager_ids={"8001": "1", "8002": "2"})
+            b = Target(name="X-Marg'ilon", username="msg_2", manager_ids={"8002": "2", "8003": "3"})
+            s.add_all([a, b, Target(name="X-Bo'sh", username="msg_3")])
+            await s.commit()
+            aid = a.id
+        bot, sent = AdminBot(), []
+
+        async def fake_send(users, text, buttons=None):
+            sent.append((list(users), text))
+            return len(list(users)) - (1 if "8003" in users else 0)  # 8003 botni bloklagan
+
+        bot.send = fake_send
+        menu = Ev(777, BTN_MESSAGE)
+        await bot._on_message(menu)
+        # bitta filialga
+        pick = Ev(777, data=f"msg:{aid}".encode())
+        await bot._on_click(pick)
+        one = Ev(777, "Ertaga soat 9 da yig'ilish")
+        await bot._on_message(one)
+        after = Ev(777, "bu endi yuborilmaydi")
+        await bot._on_message(after)
+        # barchaga: takroriy menejer bir marta oladi
+        await bot._on_click(Ev(777, data=b"msg:all"))
+        everyone = Ev(777, "Bayram bilan!")
+        await bot._on_message(everyone)
+        # yozish paytida boshqa tugma bosilsa — bekor bo'ladi, xabar ketmaydi
+        await bot._on_click(Ev(777, data=b"msg:all"))
+        n = len(sent)
+        monkey = Ev(777, "/bekor")
+        await bot._on_message(monkey)
+        # begona odam
+        bad = Ev(8001, data=b"msg:all")
+        await bot._on_click(bad)
+        hack = Ev(8001, BTN_MESSAGE)
+        await bot._on_message(hack)
+        return menu, pick, one, everyone, sent, n, monkey, bad, hack, dict(bot._compose)
+
+    menu, pick, one, everyone, sent, n, monkey, bad, hack, compose = asyncio.run(run())
+    assert menu.menu[0] == ("Barcha menejerlarga (3)", "msg:all") and menu.menu[-1][1] == "msg:cancel"
+    assert [m[0] for m in menu.menu[1:-1]] == ["X-Qo'qon (2)", "X-Marg'ilon (2)"]  # menejersiz filial ro'yxatda yo'q
+    assert "X-Qo'qon (2 kishi)" in pick.out[0]
+    assert sent[0] == (["8001", "8002"], MESSAGE_HEAD + "Ertaga soat 9 da yig'ilish") and "2 / 2" in one.out[0]
+    assert sent[1][0] == ["8001", "8002", "8003"] and "2 / 3" in everyone.out[0] and "bloklagan" in everyone.out[0]
+    assert len(sent) == 2 == n and "bekor qilindi" in monkey.out[0] and compose == {}
+    assert bad.answers == ["Ruxsat yo'q"] and hack.menu is None
