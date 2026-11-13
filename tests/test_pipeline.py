@@ -56,8 +56,14 @@ class Bot:
 
 
 async def fake_analyze(text, targets, rules):
+    if "Manzillarimiz" in text:
+        kind, line = "contact", 2
+    elif "@hilolnashr" in text:
+        kind, line = "signature", text.split("\n").index("@hilolnashr")
+    else:
+        kind, line = "none", None
     return ai.Analysis(
-        cta_start_line=2 if "Manzillarimiz" in text else None,
+        block_type=kind, cta_start_line=line,
         decisions=[ai.TargetDecision(target_id=t.id, send="Toshkent" not in text, confidence=0.95, reason="sinov") for t in targets],
     )
 
@@ -113,6 +119,29 @@ async def scenario(monkeypatch):
     edits = only(c.edits)
     assert len(edits) == 6 and edits[4][3] == "media-55" and "35 000" in edits[4][2] and "Buyurtma" in edits[4][2]
 
+    # tabrik posti: faqat imzo almashadi, to'liq aloqa bloki qo'shilmaydi
+    store[4] = mk(4, "Juma muborak!\n\n@hilolnashr", photo_id=40)
+    n = len(only(c.sent))
+    await p.on_new([store[4]])
+    greet = only(c.sent)[n:]
+    assert len(greet) == 2
+    assert greet[0][1] == "Juma muborak!\n\n@p_Hilol_qoqon_test"  # imzo berilmagan: kanal username'i
+    assert "Buyurtma" not in greet[1][1] and "+998" not in greet[1][1] and "@hilolnashr" not in greet[1][1]
+    # filialning o'z imzosi berilgan bo'lsa, o'sha qo'yiladi; tahrirda ham saqlanadi
+    async with Session() as s:
+        t = (await s.execute(select(Target).where(Target.username == "p_Hilol_qoqon_test"))).scalars().first()
+        t.signature_html = "@Hilolnashr_qoqon"
+        await s.commit()
+    store[4] = mk(4, "Juma ayyomi muborak!\n\n@hilolnashr", photo_id=40)
+    k = len(only(c.edits))
+    await p.on_edit(store[4])
+    assert only(c.edits)[k][2] == "Juma ayyomi muborak!\n\n@Hilolnashr_qoqon"
+    # imzosiz post: oxiriga filial imzosi qo'shiladi
+    store[5] = mk(5, "Ilm olish har bir musulmonga farzdir.")
+    n = len(only(c.sent))
+    await p.on_new([store[5]])
+    assert only(c.sent)[n][1] == "Ilm olish har bir musulmonga farzdir.\n\n@Hilolnashr_qoqon"
+
     # o'chirish
     await p.on_delete(CHAT, [1, 2])
     deleted = only(c.deleted)
@@ -134,6 +163,10 @@ def test_migration_adds_missing_column():
     eng = create_engine("sqlite://")
     with eng.begin() as conn:
         conn.execute(text("CREATE TABLE source_posts (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE targets (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("INSERT INTO targets (id) VALUES (1)"))
         _migrate(conn)
         _migrate(conn)  # ikkinchi marta xatosiz o'tadi
+        assert conn.execute(text("SELECT signature_html FROM targets")).scalar() == ""
+        assert "block_type" in {c["name"] for c in inspect(conn).get_columns("source_posts")}
         assert "media_ids" in {c["name"] for c in inspect(conn).get_columns("source_posts")}

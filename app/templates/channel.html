@@ -15,9 +15,14 @@
 </select></div>
 </div>
 <div>
-<label for="tpl">Aloqa bloki shabloni</label>
+<label for="tpl">To'liq aloqa bloki (sotuv postlari uchun)</label>
 <textarea id="tpl" name="template_html" rows="7">{{ t.template_html if t }}</textarea>
 <div class="muted">Bosh kanalning aloqa bloki o'rniga shu matn qo'yiladi. Havola: &lt;a href="https://..."&gt;matn&lt;/a&gt;, qalin: &lt;b&gt;matn&lt;/b&gt;. Premium emoji &lt;tg-emoji&gt; tegi bilan yoziladi — uni qo'lda yozmang, pastdagi "Shablonni Telegram xabaridan olish" orqali kiriting.</div>
+</div>
+<div>
+<label for="sig">Qisqa imzo</label>
+<input id="sig" name="signature_html" type="text" value="{{ t.signature_html if t }}" placeholder="@{{ t.username if t else 'Hilolnashr_qoqon' }}">
+<div class="muted">Tabrik, iqtibos kabi sotuvga oid bo'lmagan postlarda bosh kanal imzosi (@hilolnashr) o'rniga shu qo'yiladi; to'liq aloqa bloki qo'shilmaydi. Bo'sh qoldirilsa, kanalning o'z username'i ishlatiladi.</div>
 </div>
 <div>
 <label for="kw">Filial kalit so'zlari</label>

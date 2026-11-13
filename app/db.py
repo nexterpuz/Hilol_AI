@@ -49,6 +49,8 @@ class Target(Base):
     mode: Mapped[str] = mapped_column(String(10), default="smart")  # auto | smart | manual
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     template_html: Mapped[str] = mapped_column(Text, default="")
+    # Sotuvga oid bo'lmagan postlar (tabrik, iqtibos) ostiga qo'yiladigan qisqa imzo, masalan @Hilolnashr_qoqon
+    signature_html: Mapped[str] = mapped_column(Text, default="", server_default="")
     keywords: Mapped[str] = mapped_column(Text, default="")
     sync_edits: Mapped[bool] = mapped_column(Boolean, default=True)
     sync_deletes: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -75,6 +77,7 @@ class SourcePost(Base):
     text: Mapped[str] = mapped_column(Text, default="")
     text_hash: Mapped[str] = mapped_column(String(64), default="")
     cta_start_line: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    block_type: Mapped[str | None] = mapped_column(String(10), nullable=True)  # contact | signature | none
     media_ids: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {xabar id: media id}
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -130,7 +133,10 @@ def _migrate(conn) -> None:
     """Mavjud jadvallarga keyin qo'shilgan ustunlarni qo'shadi (create_all buni qilmaydi)."""
     from sqlalchemy import inspect, text
 
-    wanted = {"source_posts": {"media_ids": "JSON"}}
+    wanted = {
+        "source_posts": {"media_ids": "JSON", "block_type": "VARCHAR(10)"},
+        "targets": {"signature_html": "TEXT DEFAULT '' NOT NULL"},
+    }
     inspector = inspect(conn)
     for table, columns in wanted.items():
         have = {c["name"] for c in inspector.get_columns(table)}

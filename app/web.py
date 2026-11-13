@@ -405,7 +405,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
     async def channel_save(
         request: Request, target_id: int,
         name: str = Form(...), username: str = Form(...), mode: str = Form("smart"),
-        template_html: str = Form(""), keywords: str = Form(""),
+        template_html: str = Form(""), signature_html: str = Form(""), keywords: str = Form(""),
         sync_edits: str = Form(""), sync_deletes: str = Form(""), silent: str = Form(""),
     ):
         username = username.strip().removeprefix("https://t.me/").lstrip("@")
@@ -420,6 +420,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             target.name, target.username = name.strip(), username
             target.mode = mode if mode in MODES else "smart"
             target.template_html = template_html.replace("\r\n", "\n").strip()
+            target.signature_html = signature_html.replace("\r\n", "\n").strip()
             target.keywords = keywords.strip()
             target.sync_edits, target.sync_deletes, target.silent = bool(sync_edits), bool(sync_deletes), bool(silent)
             s.add(target)

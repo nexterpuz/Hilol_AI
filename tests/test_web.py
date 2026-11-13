@@ -133,10 +133,10 @@ def test_panel_flow():
     assert len(bt["weekdays"]) == 7 and bt["top"][0]["hour"] == bt["cells"][0]["hour"]
 
     # kanalni tahrirlash
-    r = c.post(f"/channels/{target_id}", data={"name": "Qo'qon 2", "username": "https://t.me/qoqon_x", "mode": "auto", "template_html": "T", "keywords": "k", "sync_edits": "1"})
+    r = c.post(f"/channels/{target_id}", data={"name": "Qo'qon 2", "username": "https://t.me/qoqon_x", "mode": "auto", "template_html": "T", "signature_html": "@Hilolnashr_qoqon", "keywords": "k", "sync_edits": "1"})
     assert r.headers["location"].endswith("saved=1")
     page = c.get(f"/channels/{target_id}?saved=1").text
-    assert "Qo&#39;qon 2" in page and "Saqlandi" in page
+    assert "Qo&#39;qon 2" in page and "Saqlandi" in page and 'value="@Hilolnashr_qoqon"' in page
     # shablonni Telegram xabaridan olish (premium emoji bilan)
     c.post(f"/channels/{target_id}/template-import", data={"link": "yaroqsiz"})
     assert "Havola noto" in c.get(f"/channels/{target_id}").text

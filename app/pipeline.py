@@ -31,6 +31,13 @@ def decide(mode: str, decision, threshold: float) -> tuple[str, str]:
     return "skip", decision.reason
 
 
+def closing_for(target, block_type: str | None) -> str:
+    """Post oxiriga qo'yiladigan qism: sotuv postida to'liq aloqa bloki, boshqalarida qisqa imzo."""
+    if block_type in (None, "contact"):  # None — bu maydon qo'shilishidan oldingi postlar
+        return target.template_html
+    return target.signature_html or f"@{target.username}"
+
+
 def text_hash(msg) -> str:
     ents = repr([e.to_dict() for e in (msg.entities or [])])
     return hashlib.sha256(((msg.message or "") + ents).encode()).hexdigest()
@@ -110,6 +117,7 @@ class Pipeline:
                 text=cap.message or "",
                 text_hash=text_hash(cap),
                 cta_start_line=analysis.cta_start_line if analysis else None,
+                block_type=analysis.block_type if analysis else None,
                 media_ids={str(m.id): media_id(m) for m in msgs},
             )
             s.add(post)
@@ -168,7 +176,7 @@ class Pipeline:
             await self._fail(delivery_id, target, "Manba post topilmadi")
             return False
         cap = next((m for m in msgs if m.message), msgs[0])
-        text, ents = build_post(cap.message or "", cap.entities, post.cta_start_line, target.template_html)
+        text, ents = build_post(cap.message or "", cap.entities, post.cta_start_line, closing_for(target, post.block_type))
         files = [m for m in msgs if is_file(m)]
         if not fits(text, bool(files), self.premium):
             await self._fail(delivery_id, target, "Matn Telegram limitidan uzun (Premium kerak yoki qisqartirish)")
@@ -238,6 +246,7 @@ class Pipeline:
                     return
                 post.text, post.text_hash = msg.message or "", new_hash
                 post.cta_start_line = analysis.cta_start_line if analysis else None
+                post.block_type = analysis.block_type if analysis else None
             if media_changed:
                 post.media_ids = {**(post.media_ids or {}), str(msg.id): new_media}
             deliveries = list(
@@ -253,7 +262,7 @@ class Pipeline:
             if not target.sync_edits or idx >= len(d.target_msg_ids) or not d.target_msg_ids[idx]:
                 continue
             if is_caption_msg:
-                text, ents = build_post(msg.message or "", msg.entities, post.cta_start_line, target.template_html)
+                text, ents = build_post(msg.message or "", msg.entities, post.cta_start_line, closing_for(target, post.block_type))
             else:
                 text, ents = "", []  # albomning izohsiz elementi
             if not fits(text, is_file(msg), self.premium):
