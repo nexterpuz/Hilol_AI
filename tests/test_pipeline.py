@@ -54,6 +54,9 @@ class Bot:
     async def ask(self, delivery_id, target, text, reason, skipped):
         self.msgs.append(("ask", delivery_id, skipped))
 
+    async def ask_branch(self, delivery_id, target, text):
+        self.msgs.append(("branch", delivery_id, target.username))
+
 
 async def fake_analyze(text, targets, rules, examples=None):
     if "Manzillarimiz" in text:
@@ -212,9 +215,54 @@ async def scenario(monkeypatch):
         d11 = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()))).scalars().first()
     assert d11.status == "pending" and "ариза юбориш" in d11.reason
 
+    # filial tasdig'i: sotuv posti menejerga boradi, tabrik posti avtomatik chiqadi
+    async with Session() as s:
+        t = (await s.execute(select(Target).where(Target.username == "p_Hilol_qoqon_test"))).scalars().first()
+        t.branch_approval = True
+        await s.commit()
+        qoqon_id = t.id
+    store[12] = mk(12, "Yangi «Ilm» kitobi\nNarxi 50 000\nManzillarimiz\n@hilol", photo_id=70)
+    n = len(only(c.sent))
+    await p.on_new([store[12]])
+    assert len(only(c.sent)) == n + 1  # faqat Marg'ilon; Qo'qon menejer tasdig'ini kutadi
+    async with Session() as s:
+        d12 = (await s.execute(select(Delivery).where(Delivery.target_id == qoqon_id).order_by(Delivery.id.desc()))).scalars().first()
+    assert d12.status == "pending" and d12.reason == "Filial tasdig'i kutilmoqda"
+    assert ("branch", d12.id, "p_Hilol_qoqon_test") in b.msgs
+    assert await p.publish(d12.id) and len(only(c.sent)) == n + 2  # menejer "Kanalga joylash" ni bosdi
+    store[13] = mk(13, "Ramazon muborak!\n\n@hilolnashr")
+    n = len(only(c.sent))
+    await p.on_new([store[13]])
+    assert len(only(c.sent)) == n + 2  # tabrik posti tasdiqsiz ikkala filialga
+
+    # postni qaytarib olish: filiallardan o'chadi
+    async with Session() as s:
+        post12 = d12.post_id
+    k = len(only(c.deleted))
+    assert await p.recall(post12) >= 2 and len(only(c.deleted)) == k + 2
+    async with Session() as s:
+        left = list((await s.execute(select(Delivery).where(Delivery.post_id == post12, Delivery.status == "sent"))).scalars())
+    assert not left and await p.recall(post12) == 0
+
+    # favqulodda to'xtatish: yangi post chiqmaydi, navbatga tushadi, so'ralmaydi
+    await pipeline.set_paused(True)
+    store[14] = mk(14, "Shanba muborak!\n\n@hilolnashr")
+    n, q = len(only(c.sent)), len(b.msgs)
+    await p.on_new([store[14]])
+    async with Session() as s:
+        d14 = (await s.execute(select(Delivery).where(Delivery.target_id == qoqon_id).order_by(Delivery.id.desc()))).scalars().first()
+    assert len(only(c.sent)) == n and d14.status == "pending" and d14.reason == "Favqulodda to'xtatish yoqilgan"
+    assert not any(isinstance(m, tuple) and m[1] == d14.id for m in b.msgs[q:])
+    await pipeline.set_paused(False)
+    assert not await pipeline.is_paused()
+    store[15] = mk(15, "Yakshanba muborak!\n\n@hilolnashr")
+    await p.on_new([store[15]])
+    assert len(only(c.sent)) == n + 2
+
     # o'chirish
+    k = len(only(c.deleted))
     await p.on_delete(CHAT, [1, 2])
-    deleted = only(c.deleted)
+    deleted = only(c.deleted)[k:]
     assert len(deleted) == 2 and len(deleted[0][1]) == 2
     async with Session() as s:
         post = (await s.execute(select(SourcePost).where(SourcePost.chat_id == CHAT))).scalars().first()
@@ -292,3 +340,101 @@ def test_ask_words():
     assert ask_word_in("📩Ариза юбориш учун:\n@hilolnashrhr", DEFAULT_ASK_WORDS) == "ариза юбориш"
     assert ask_word_in("Жума муборак!", DEFAULT_ASK_WORDS) == ""
     assert ask_word_in("Вакансия", "") == ""
+
+
+def test_phone_keys():
+    from app.pipeline import phone_key, phone_keys
+
+    assert phone_key("+998 90 939-29-27") == phone_key("998909392927") == phone_key("909392927") == "909392927"
+    assert phone_key("12345") == ""
+    assert phone_keys("+998 90 939 29 27, 91-765-43-21\n") == {"909392927"} | ({"917654321"} if phone_key("91-765-43-21") else set())
+
+
+def test_bot_manager_binding_and_permissions():
+    """Menejer faqat o'z raqamini ulashib bog'lanadi va faqat o'z filiali postini tasdiqlay oladi."""
+    from types import SimpleNamespace as NS2
+
+    from app.adminbot import AdminBot
+
+    class Ev:
+        def __init__(self, sender, contact=None, text="", data=b""):
+            self.sender_id, self.raw_text, self.data = sender, text, data
+            self.message = NS2(contact=contact, message="Yangi post")
+            self.out, self.answers = [], []
+
+        async def respond(self, text, buttons=None):
+            self.out.append(text)
+
+        async def answer(self, text, alert=False):
+            self.answers.append(text)
+
+        async def get_message(self):
+            return self.message
+
+        async def edit(self, text, **k):
+            self.out.append(text)
+
+    class Pipe:
+        def __init__(self):
+            self.calls = []
+
+        async def publish(self, i):
+            self.calls.append(("publish", i))
+            return True
+
+        async def approve(self, i):
+            self.calls.append(("approve", i))
+            return True
+
+        async def reject(self, i, remember=True):
+            self.calls.append(("reject", i, remember))
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            a = Target(name="Bog' A", username="bind_a", manager_phones="+998 90 111 22 33")
+            b = Target(name="Bog' B", username="bind_b", manager_phones="+998 91 444 55 66")
+            s.add_all([a, b])
+            post = SourcePost(chat_id=-9, msg_ids=[1], text="Yangi kitob")
+            s.add(post)
+            await s.flush()
+            da = Delivery(post_id=post.id, target_id=a.id, status="pending")
+            dbb = Delivery(post_id=post.id, target_id=b.id, status="pending")
+            s.add_all([da, dbb])
+            await s.commit()
+            ids = (a.id, da.id, dbb.id)
+        bot = AdminBot()
+        sent = []
+
+        async def fake_send(user_ids, text, buttons=None):
+            sent.append((list(user_ids), text))
+            return len(list(user_ids))
+
+        bot.send = fake_send
+        bot.pipeline = Pipe()
+        # begona odamning raqamini ulashish rad etiladi
+        e1 = Ev(500, contact=NS2(user_id=999, phone_number="+998901112233"))
+        await bot._bind(e1)
+        # ro'yxatda yo'q raqam
+        e2 = Ev(501, contact=NS2(user_id=501, phone_number="+998930000000"))
+        await bot._bind(e2)
+        # to'g'ri raqam: A filialiga bog'lanadi va kutayotgan posti keladi
+        e3 = Ev(502, contact=NS2(user_id=502, phone_number="998901112233"))
+        await bot._bind(e3)
+        async with Session() as s:
+            bound = (await s.get(Target, ids[0])).manager_ids
+        # o'z filiali postini joylaydi (xotirasiz), begona filialnikini — yo'q
+        ok = Ev(502, data=f"ok:{ids[1]}".encode())
+        await bot._on_click(ok)
+        foreign = Ev(502, data=f"ok:{ids[2]}".encode())
+        await bot._on_click(foreign)
+        admin = Ev(777, data=f"no:{ids[2]}".encode())
+        await bot._on_click(admin)
+        return e1.out, e2.out, e3.out, bound, bot.pipeline.calls, foreign.answers, sent, ids
+
+    e1, e2, e3, bound, calls, foreign, sent, ids = asyncio.run(run())
+    assert "o'z raqamingizni" in e1[0] and "biriktirilmagan" in e2[0] and "Bog' A" in e3[0]
+    assert bound == {"502": "901112233"}
+    assert calls == [("publish", ids[1]), ("reject", ids[2], True)]
+    assert foreign == ["Ruxsat yo'q"]
+    assert any(u == [502] and "Kutmoqda" in t for u, t in sent)  # bog'langach kutayotgan post yuborildi

@@ -5,6 +5,8 @@
 <h1>Postlar</h1>
 <div class="row">{% for d in (7, 30, 90) %}<a class="btn {{ 'primary' if d == days }}" href="/posts?days={{ d }}">{{ d }} kun</a>{% endfor %}</div>
 </div>
+{% if saved %}<div class="note ok" role="status">{{ saved }}</div>{% endif %}
+{% if warning %}<div class="note warn" role="alert">{{ warning }}</div>{% endif %}
 {% if best %}
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
 <section class="card"><h2>Eng yaxshi qamrov</h2>
@@ -21,7 +23,7 @@
 <div class="muted">Ko'rishlar barcha filial kanallari bo'yicha jamlangan. Qamrov — ko'rishlar ÷ obunachilar, kanallar bo'yicha o'rtacha. Statistika soatiga bir marta yig'iladi.</div>
 <div class="scroll">
 <table>
-<thead><tr><th>Post</th><th>Vaqti</th><th class="num">Kanallar</th><th class="num">1 soat</th><th class="num">24 soat</th><th class="num">72 soat</th><th class="num">Hozir</th><th class="num">Qamrov</th></tr></thead>
+<thead><tr><th>Post</th><th>Vaqti</th><th class="num">Kanallar</th><th class="num">1 soat</th><th class="num">24 soat</th><th class="num">72 soat</th><th class="num">Hozir</th><th class="num">Qamrov</th><th></th></tr></thead>
 <tbody>
 {% for r in rows %}
 <tr>
@@ -33,9 +35,10 @@
 <td class="num">{{ n(r.v72) }}</td>
 <td class="num">{{ n(r.now) }}</td>
 <td class="num">{{ n(r.reach, "%") }}</td>
+<td class="num">{% if r.live %}<form class="inline" method="post" action="/posts/{{ r.id }}/recall" onsubmit="return confirm('Post {{ r.live }} ta filial kanalidan o\'chiriladi. Bosh kanalga tegilmaydi. Davom etasizmi?')"><button class="btn" type="submit">Qaytarib olish</button></form>{% endif %}</td>
 </tr>
 {% else %}
-<tr><td colspan="8" class="muted">Bu davrda post yo'q.</td></tr>
+<tr><td colspan="9" class="muted">Bu davrda post yo'q.</td></tr>
 {% endfor %}
 </tbody>
 </table>

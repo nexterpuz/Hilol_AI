@@ -6,6 +6,7 @@
 <h1>Umumiy ko'rinish</h1>
 <div class="row">
 {% for d in (7, 30, 90) %}<a class="btn {{ 'primary' if d == days }}" href="/?days={{ d }}">{{ d }} kun</a>{% endfor %}
+{% if not paused %}<form method="post" action="/pause" onsubmit="return confirm('Barcha filial kanallariga ko\'chirish to\'xtatiladi. Davom etasizmi?')"><input type="hidden" name="state" value="on"><button class="btn danger" type="submit"><span class="danger">Favqulodda to'xtatish</span></button></form>{% endif %}
 </div>
 </div>
 <div class="grid">

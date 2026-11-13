@@ -106,6 +106,8 @@ form.inline{display:inline}
 </nav>
 <main>
 {% if ephemeral_db %}<div class="note danger" role="alert"><strong>Doimiy baza ulanmagan.</strong> DATABASE_URL o'zgaruvchisi topilmadi, shuning uchun ma'lumotlar vaqtinchalik faylda turibdi va har bir yangilanishda o'chadi (Telegram akkaunt ham uziladi). Railway'da Hilol_AI xizmatining Variables bo'limiga DATABASE_URL = ${{ '{{' }}Postgres.DATABASE_URL{{ '}}' }} qo'shing.</div>{% endif %}
+{% if paused %}<div class="note danger row between" role="alert"><span><strong>Favqulodda to'xtatish yoqilgan.</strong> Yangi postlar filial kanallariga chiqmayapti, Tasdiq navbatida to'planmoqda. Tahrir va o'chirishni sinxronlash ishlayveradi.</span>
+<form method="post" action="/pause"><input type="hidden" name="state" value="off"><button class="btn primary" type="submit">Davom ettirish</button></form></div>{% endif %}
 {% block main %}{% endblock %}
 </main>
 </div>

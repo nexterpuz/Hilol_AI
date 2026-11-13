@@ -50,6 +50,33 @@ def ask_word_in(text: str, words: str) -> str:
     return next((w for w in (x.strip().lower() for x in words.split(",")) if w and w in low), "")
 
 
+def phone_key(phone: str) -> str:
+    """Telefon raqamni solishtirish uchun kalit: oxirgi 9 ta raqam (+998 va belgilarsiz)."""
+    digits = re.sub(r"\D", "", phone or "")
+    return digits[-9:] if len(digits) >= 9 else ""
+
+
+def phone_keys(phones: str) -> set[str]:
+    return {k for k in (phone_key(x) for x in re.split(r"[,;\n]", phones or "")) if k}
+
+
+async def is_paused() -> bool:
+    async with Session() as s:
+        row = await s.get(Setting, "paused")
+        return bool(row and row.value == "1")
+
+
+async def set_paused(flag: bool) -> None:
+    async with Session() as s:
+        row = await s.get(Setting, "paused")
+        if row is not None:
+            row.value = "1" if flag else "0"
+        else:
+            s.add(Setting(key="paused", value="1" if flag else "0"))
+        await s.commit()
+    await db_log("paused" if flag else "resumed", "")
+
+
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
@@ -133,6 +160,8 @@ class Pipeline:
             memory = list((await s.execute(select(Decision).order_by(Decision.id.desc()).limit(300))).scalars())
             row = await s.get(Setting, "ask_words")
             ask_words = row.value if row is not None else DEFAULT_ASK_WORDS
+            pause_row = await s.get(Setting, "paused")
+            paused = bool(pause_row and pause_row.value == "1")
 
         text = cap.message or ""
         by_name = {t.id: t.name for t in targets}
@@ -174,6 +203,12 @@ class Pipeline:
                 if past is not None and t.mode != "manual":
                     # Admin o'xshash post bo'yicha qaror bergan: qayta so'ralmaydi
                     action, reason, quiet = ("send" if past.send else "skip"), "Avvalgi qaroringiz bo'yicha", True
+                branch = False
+                if t.branch_approval and analysis is not None and analysis.block_type == "contact" and action == "send":
+                    # Sotuv posti: kitob filialga kelgach, filial menejeri o'zi tasdiqlaydi
+                    action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True
+                if paused:
+                    action, reason, quiet, branch = "ask", "Favqulodda to'xtatish yoqilgan", True, False
                 if not all(is_supported(m) for m in msgs):
                     action, reason = "ask", "Post turi avtomatik ko'chirilmaydi (so'rovnoma va h.k.)"
                 delivery = Delivery(
@@ -184,14 +219,16 @@ class Pipeline:
                 )
                 s.add(delivery)
                 await s.flush()
-                plan.append((delivery.id, t, action, reason, quiet))
+                plan.append((delivery.id, t, action, reason, quiet, branch))
             await s.commit()
             post_id = post.id
 
         await db_log("new_post", f"post={post_id} ids={ids}")
-        for delivery_id, target, action, reason, quiet in plan:
+        for delivery_id, target, action, reason, quiet, branch in plan:
             if action == "send":
                 await self.publish(delivery_id)
+            elif self.notifier and branch:
+                await self.notifier.ask_branch(delivery_id, target, cap.message or "(matnsiz post)")
             elif self.notifier and not quiet:
                 await self.notifier.ask(delivery_id, target, cap.message or "(matnsiz post)", reason, skipped=action == "skip")
 
@@ -282,8 +319,37 @@ class Pipeline:
         await self._remember(delivery_id, True)
         return await self.publish(delivery_id)
 
-    async def reject(self, delivery_id: int) -> None:
-        await self._remember(delivery_id, False)
+    async def recall(self, post_id: int) -> int:
+        """Postni barcha filial kanallaridan o'chiradi (bosh kanalga tegmaydi). Qaytaradi: nechta kanaldan."""
+        removed = 0
+        async with Session() as s:
+            deliveries = list((await s.execute(select(Delivery).where(Delivery.post_id == post_id, Delivery.status == "sent"))).scalars())
+            targets = {t.id: t for t in (await s.execute(select(Target))).scalars()}
+            for d in deliveries:
+                ids = [i for i in d.target_msg_ids if i]
+                target = targets.get(d.target_id)
+                if not ids or target is None:
+                    continue
+                try:
+                    await self.client.delete_messages(target.username, ids)
+                except Exception as e:
+                    log.exception("recall")
+                    if self.notifier:
+                        await self.notifier.say(f"Qaytarib olinmadi — {target.name}: {e}")
+                    continue
+                d.status, d.reason, d.target_msg_ids = "deleted", "Admin qaytarib oldi", [None] * len(d.target_msg_ids)
+                removed += 1
+            # kutayotgan nusxalar ham bekor qilinadi
+            waiting = (await s.execute(select(Delivery).where(Delivery.post_id == post_id, Delivery.status.in_(("pending", "skipped"))))).scalars()
+            for d in waiting:
+                d.status, d.reason = "rejected", "Admin qaytarib oldi"
+            await s.commit()
+        await db_log("recalled", f"post={post_id} removed_from={removed}")
+        return removed
+
+    async def reject(self, delivery_id: int, remember: bool = True) -> None:
+        if remember:
+            await self._remember(delivery_id, False)
         async with Session() as s:
             d = await s.get(Delivery, delivery_id)
             if d and d.status in ("pending", "skipped", "failed"):

@@ -16,6 +16,7 @@ from sqlalchemy import delete, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import EPHEMERAL_DB, settings
+from .pipeline import is_paused, phone_keys, set_paused
 from .db import Decision, Delivery, Event, Setting, Rule, Session, SourcePost, StatChannel, StatPost, Subscriber, Target, now
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -79,6 +80,7 @@ EVENT_LABELS = {
     "new_post": "Yangi post", "sent": "Yuborildi", "failed": "Xatolik", "edited": "Tahrir sinxronlandi",
     "deleted": "O'chirish sinxronlandi", "account_started": "Akkaunt ulandi", "account_lost": "Akkaunt uzildi",
     "source_changed": "Manba o'zgartirildi", "ai_failed": "AI ishlamadi (zaxira qoidalar)",
+    "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi",
 }
 
 
@@ -131,7 +133,7 @@ async def posts_data(days: int) -> dict:
         rr = [reach[d.id] for d in mine if d.id in reach]
         rows.append({
             "id": p.id, "text": (p.text or "(matnsiz post)").split("\n")[0][:90], "when": local_time(p.created_at),
-            "deleted": p.deleted, "channels": len(mine),
+            "deleted": p.deleted, "channels": len(mine), "live": sum(1 for d in mine if d.status == "sent"),
             "v1": _total([views_at(snaps[d.id], d.sent_at, 1, t) for d in mine]),
             "v24": _total([views_at(snaps[d.id], d.sent_at, 24, t) for d in mine]),
             "v72": _total([views_at(snaps[d.id], d.sent_at, 72, t) for d in mine]),
@@ -298,6 +300,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             return _go("/login")
         if request.method == "GET" and not request.url.path.startswith(("/api/", "/static/")) and request.url.path != "/login":
             request.state.pending = await pending_count()  # menyudagi navbat belgisi uchun
+            request.state.paused = await is_paused()
         return await call_next(request)
 
     # Oxirgi qo'shilgan middleware eng tashqarida ishlaydi: sessiya auth'dan oldin ochilishi kerak
@@ -315,7 +318,8 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         return templates.TemplateResponse(
             request, name,
             {"modes": MODES, "path": request.url.path, "connected": connected, "ephemeral_db": EPHEMERAL_DB,
-             "pending_count": getattr(request.state, "pending", 0), **ctx},
+             "pending_count": getattr(request.state, "pending", 0),
+             "paused": getattr(request.state, "paused", False), **ctx},
         )
 
     # ---------- kirish ----------
@@ -347,6 +351,24 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         days = days if days in (7, 30, 90) else 30
         data = await dashboard_data(days)
         return page(request, "dashboard.html", days=days, points=svg_points(data["series"]), **data)
+
+    # ---------- favqulodda to'xtatish va qaytarib olish ----------
+
+    @app.post("/pause")
+    async def pause(request: Request, state: str = Form("")):
+        await set_paused(state == "on")
+        if agent is not None and getattr(agent, "notifier", None):
+            await agent.notifier.say("Favqulodda to'xtatish yoqildi (paneldan)." if state == "on" else "Agent davom ettirildi (paneldan).")
+        return _go(request.headers.get("referer") or "/")
+
+    @app.post("/posts/{post_id}/recall")
+    async def post_recall(request: Request, post_id: int):
+        if agent is None or agent.pipeline is None:
+            request.session["warning"] = "Telegram akkaunt ulanmagan — postni qaytarib bo'lmaydi."
+        else:
+            n = await agent.pipeline.recall(post_id)
+            request.session["saved"] = f"Post {n} ta filial kanalidan o'chirildi."
+        return _go("/posts")
 
     # ---------- analitika ----------
 
@@ -385,7 +407,10 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
     @app.get("/posts")
     async def posts(request: Request, days: int = 30):
         days = days if days in (7, 30, 90) else 30
-        return page(request, "posts.html", days=days, **(await posts_data(days)))
+        return page(
+            request, "posts.html", days=days, saved=request.session.pop("saved", ""),
+            warning=request.session.pop("warning", ""), **(await posts_data(days)),
+        )
 
     @app.get("/log")
     async def journal(request: Request):
@@ -393,7 +418,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             events = list((await s.execute(select(Event).order_by(Event.id.desc()).limit(200))).scalars())
         items = [
             {"when": local_time(e.created_at), "label": EVENT_LABELS.get(e.kind, e.kind), "detail": e.detail,
-             "bad": e.kind in ("failed", "account_lost"), "warn": e.kind == "ai_failed"}
+             "bad": e.kind in ("failed", "account_lost"), "warn": e.kind in ("ai_failed", "paused", "recalled")}
             for e in events
         ]
         return page(request, "log.html", items=items)
@@ -429,6 +454,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         name: str = Form(...), username: str = Form(...), mode: str = Form("smart"),
         template_html: str = Form(""), signature_html: str = Form(""), keywords: str = Form(""),
         sync_edits: str = Form(""), sync_deletes: str = Form(""), silent: str = Form(""),
+        manager_phones: str = Form(""), branch_approval: str = Form(""),
     ):
         username = username.strip().removeprefix("https://t.me/").lstrip("@")
         async with Session() as s:
@@ -445,6 +471,10 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             target.signature_html = signature_html.replace("\r\n", "\n").strip()
             target.keywords = keywords.strip()
             target.sync_edits, target.sync_deletes, target.silent = bool(sync_edits), bool(sync_deletes), bool(silent)
+            target.manager_phones, target.branch_approval = manager_phones.strip(), bool(branch_approval)
+            # Ro'yxatdan olib tashlangan raqam egasi endi tasdiqlay olmaydi
+            keys = phone_keys(target.manager_phones)
+            target.manager_ids = {uid: k for uid, k in (target.manager_ids or {}).items() if k in keys}
             s.add(target)
             await s.commit()
             new_id = target.id

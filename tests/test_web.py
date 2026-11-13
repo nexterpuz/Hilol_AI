@@ -67,7 +67,11 @@ class FakePipeline:
         self.published.append(delivery_id)
         return True
 
-    async def reject(self, delivery_id):
+    async def recall(self, post_id):
+        self.published.append(("recall", post_id))
+        return 2
+
+    async def reject(self, delivery_id, remember=True):
         async with Session() as s:
             d = await s.get(Delivery, delivery_id)
             d.status = "rejected"
@@ -120,6 +124,18 @@ def test_panel_flow():
     assert "1 100" in home and "+100" in home and "40%" in home and "440" in home
     assert c.get("/?days=7").status_code == 200
 
+    # favqulodda to'xtatish: banner chiqadi, davom ettirilganda yo'qoladi
+    assert "Favqulodda to'xtatish yoqilgan" not in c.get("/").text
+    c.post("/pause", data={"state": "on"})
+    assert "Favqulodda to'xtatish yoqilgan" in c.get("/channels").text
+    c.post("/pause", data={"state": "off"})
+    assert "Favqulodda to'xtatish yoqilgan" not in c.get("/").text
+    # postni qaytarib olish
+    assert "Qaytarib olish" in c.get("/posts").text
+    c.post("/posts/1/recall")
+    assert ("recall", 1) in pipe.published and "2 ta filial kanalidan" in c.get("/posts").text
+    pipe.published.clear()
+
     # postlar analitikasi va jurnal
     posts_page = c.get("/posts").text
     assert "Yangi kitob" in posts_page and "440" in posts_page and "40%" in posts_page
@@ -139,10 +155,11 @@ def test_panel_flow():
     assert len(bt["weekdays"]) == 7 and bt["top"][0]["hour"] == bt["cells"][0]["hour"]
 
     # kanalni tahrirlash
-    r = c.post(f"/channels/{target_id}", data={"name": "Qo'qon 2", "username": "https://t.me/qoqon_x", "mode": "auto", "template_html": "T", "signature_html": "@Hilolnashr_qoqon", "keywords": "k", "sync_edits": "1"})
+    r = c.post(f"/channels/{target_id}", data={"name": "Qo'qon 2", "username": "https://t.me/qoqon_x", "mode": "auto", "template_html": "T", "signature_html": "@Hilolnashr_qoqon", "keywords": "k", "sync_edits": "1", "manager_phones": "+998 90 111 22 33", "branch_approval": "1"})
     assert r.headers["location"].endswith("saved=1")
     page = c.get(f"/channels/{target_id}?saved=1").text
     assert "Qo&#39;qon 2" in page and "Saqlandi" in page and 'value="@Hilolnashr_qoqon"' in page
+    assert 'value="+998 90 111 22 33"' in page and 'name="branch_approval" value="1" checked' in page
     # shablonni Telegram xabaridan olish (premium emoji bilan)
     c.post(f"/channels/{target_id}/template-import", data={"link": "yaroqsiz"})
     assert "Havola noto" in c.get(f"/channels/{target_id}").text
