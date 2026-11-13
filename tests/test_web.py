@@ -186,6 +186,14 @@ def test_panel_flow():
     c.post("/account/confirm", data={"password": "maxfiy"})
     acc = c.get("/account").text
     assert "Ulangan" in acc and "Premium" in acc and "admin emas" in acc
+    # manba kanalni shu sahifadan o'zgartirish
+    assert 'value="yangi_manba"' in acc
+    r = c.post("/source", data={"username": "haqiqiy_manba", "back": "/account"})
+    assert r.headers["location"] == "/account"
+    acc2 = c.get("/account").text
+    assert 'value="haqiqiy_manba"' in acc2 and "o&#39;zgartirildi" in acc2
+    assert c.post("/source", data={"username": "x_manba", "back": "https://yomon.sayt"}).headers["location"] == "/channels"
+    c.get("/channels")
     c.post("/account/logout")
     assert "ulanmagan" in c.get("/account").text
     # QR orqali kirish sahifasi
