@@ -10,3 +10,4 @@ python-multipart>=0.0.9
 itsdangerous>=2.2
 cryptography>=42
 segno>=1.6
+pillow>=10.4

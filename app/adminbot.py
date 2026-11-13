@@ -41,6 +41,20 @@ class AdminBot:
                 log.exception("Xabar yuborilmadi: %s", uid)
         return sent
 
+    async def send_photo(self, user_ids, image: bytes, caption: str) -> int:
+        import io
+
+        sent = 0
+        for uid in user_ids:
+            try:
+                f = io.BytesIO(image)
+                f.name = "hisobot.png"
+                await self.bot.send_file(int(uid), f, caption=caption, parse_mode=None, force_document=False)
+                sent += 1
+            except Exception:
+                log.exception("Hisobot yuborilmadi: %s", uid)
+        return sent
+
     async def say(self, text: str, buttons=None) -> None:
         await self.send(settings.admin_ids, text, buttons)
 
@@ -114,7 +128,8 @@ class AdminBot:
         await event.respond(
             f"Tasdiqlandi. Siz bog'langan filial: {names}.\n"
             "Endi yangi nashr va «tez kunda» postlari sizga keladi: kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosasiz.\n"
-            "Kutayotgan postlarni ko'rish: /navbat",
+            "Kutayotgan postlarni ko'rish: /navbat\n"
+            "Har yakshanba va oy oxirida soat 18:00 da filialingiz hisoboti keladi. Hozir ko'rish: /hisobot",
             buttons=Button.clear(),
         )
         await self.say(f"Filial menejeri bog'landi — {names} (Telegram ID {event.sender_id}).")
@@ -131,11 +146,17 @@ class AdminBot:
         elif is_admin and text in ("/resume", "/davom"):
             await set_paused(False)
             await event.respond("Agent davom ettirildi. To'xtatilgan paytda to'plangan postlar Tasdiq navbatida turibdi.")
+        elif text in ("/hisobot", "/hisobot_oy"):
+            from . import reports
+
+            kind = "monthly" if text == "/hisobot_oy" else "weekly"
+            if not await reports.send_reports(self, kind, only_user=uid):
+                await event.respond("Sizga tegishli hisobot yo'q. Avval /start orqali filialga bog'laning.")
         elif text.startswith("/start") or text == "/navbat":
             mine = await self._targets_of(uid)
             if is_admin and text.startswith("/start"):
                 state = "TO'XTATILGAN" if await is_paused() else "ishlayapti"
-                await event.respond(f"Siz bosh adminsiz. Agent holati: {state}.\nBuyruqlar: /stop — favqulodda to'xtatish, /resume — davom ettirish.")
+                await event.respond(f"Siz bosh adminsiz. Agent holati: {state}.\nBuyruqlar: /stop — favqulodda to'xtatish, /resume — davom ettirish, /hisobot — haftalik hisobot, /hisobot_oy — oylik hisobot.")
             if mine:
                 count = await self._send_pending(uid, mine)
                 names = ", ".join(t.name for t in mine)

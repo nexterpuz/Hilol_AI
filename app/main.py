@@ -55,6 +55,10 @@ async def main() -> None:
     else:
         log.warning("TG_BOT_TOKEN yoki ADMIN_IDS yo'q: Telegram orqali tasdiq va hisobotlar ishlamaydi")
 
+    if notifier:
+        from . import reports
+
+        asyncio.create_task(reports.run(notifier))  # haftalik va oylik hisobotlar
     agent = Agent(source_username, notifier)
     await agent.load_source()
     starter = asyncio.create_task(agent.start_delayed(settings.start_delay_sec))
