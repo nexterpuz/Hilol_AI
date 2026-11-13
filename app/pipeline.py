@@ -133,6 +133,8 @@ class Pipeline:
                     # Aloqa bloki topilmagan holda ko'r-ko'rona yubormaymiz
                     # Qisqa sabab; texnik tafsilot faqat Jurnal sahifasida
                     action, reason = "ask", "AI ishlamadi: aloqa bloki tekshirilmagan"
+                elif ai_error and action == "ask" and t.mode != "manual":
+                    reason = "AI ishlamadi: aloqa bloki tekshirilmagan"  # barcha rejimlarda bir xil matn
                 if not all(is_supported(m) for m in msgs):
                     action, reason = "ask", "Post turi avtomatik ko'chirilmaydi (so'rovnoma va h.k.)"
                 delivery = Delivery(
