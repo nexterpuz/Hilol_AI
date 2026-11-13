@@ -142,6 +142,24 @@ async def scenario(monkeypatch):
     await p.on_new([store[5]])
     assert only(c.sent)[n][1] == "Ilm olish har bir musulmonga farzdir.\n\n@Hilolnashr_qoqon"
 
+    # AI ishlamasa: post yuborilmaydi, adminga sababi bilan so'rov boradi, jurnalga yoziladi
+    async def broken(text, targets, rules):
+        ai.last_error = "Anthropic hisobida mablag' tugagan."
+        return None
+
+    monkeypatch.setattr(ai, "analyze", broken)
+    store[6] = mk(6, "Yangi kitob\nManzillarimiz", photo_id=60)
+    n = len(only(c.sent))
+    await p.on_new([store[6]])
+    assert len(only(c.sent)) == n
+    async with Session() as s:
+        from app.db import Event
+
+        d = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()))).scalars().first()
+        assert d.status == "pending" and "mablag' tugagan" in d.reason
+        assert (await s.execute(select(Event).where(Event.kind == "ai_failed"))).scalars().first() is not None
+    monkeypatch.setattr(ai, "analyze", fake_analyze)
+
     # o'chirish
     await p.on_delete(CHAT, [1, 2])
     deleted = only(c.deleted)

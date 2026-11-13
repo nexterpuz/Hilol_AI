@@ -57,6 +57,14 @@ class Analysis(BaseModel):
 
 
 _client: anthropic.AsyncAnthropic | None = None
+last_error = ""  # oxirgi muvaffaqiyatsiz tahlil sababi (adminga va jurnalga ko'rsatiladi)
+
+
+def _failed(reason: str) -> None:
+    global last_error
+    last_error = reason
+    log.error("AI tahlili muvaffaqiyatsiz: %s", reason)
+    return None
 
 
 def _get_client() -> anthropic.AsyncAnthropic:
@@ -77,6 +85,8 @@ async def analyze(text: str, targets: list, rules: list[str]) -> Analysis | None
         f"<admin_qoidalari>\n{rules_text}\n</admin_qoidalari>\n\n"
         f"<post>\n{numbered_lines(text)}\n</post>"
     )
+    global last_error
+    last_error = ""
     try:
         response = await _get_client().beta.messages.parse(
             model=settings.ai_model,
@@ -89,16 +99,20 @@ async def analyze(text: str, targets: list, rules: list[str]) -> Analysis | None
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
         )
-    except anthropic.RateLimitError as e:
-        log.warning("AI limit: %s", e)
-        return None
+    except anthropic.AuthenticationError:
+        return _failed("Anthropic API kaliti noto'g'ri yoki bekor qilingan (ANTHROPIC_API_KEY).")
+    except anthropic.RateLimitError:
+        return _failed("Anthropic so'rovlar limiti tugadi, birozdan keyin o'zi tiklanadi.")
     except anthropic.APIStatusError as e:
-        log.error("AI xatosi %s: %s", e.status_code, e.message)
-        return None
-    except anthropic.APIConnectionError as e:
-        log.error("AI bilan aloqa yo'q: %s", e)
-        return None
+        message = str(getattr(e, "message", e))
+        if "credit balance" in message.lower():
+            return _failed("Anthropic hisobida mablag' tugagan. Billing bo'limida balansni to'ldiring.")
+        return _failed(f"Anthropic xatosi {e.status_code}: {message[:200]}")
+    except anthropic.APIConnectionError:
+        return _failed("Anthropic serveriga ulanib bo'lmadi.")
+    except Exception as e:  # masalan, javob sxemaga mos kelmadi
+        log.exception("AI tahlili")
+        return _failed(f"AI javobini o'qib bo'lmadi: {type(e).__name__}")
     if response.stop_reason == "refusal" or response.parsed_output is None:
-        log.warning("AI javob bermadi: stop_reason=%s", response.stop_reason)
-        return None
+        return _failed(f"AI javob bermadi (stop_reason={response.stop_reason}).")
     return response.parsed_output

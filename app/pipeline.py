@@ -108,6 +108,9 @@ class Pipeline:
 
         # Aloqa blokini topish uchun tahlil har qanday rejimda kerak
         analysis = await ai.analyze(cap.message or "", targets, rules) if cap.message else None
+        ai_error = ai.last_error if cap.message and analysis is None else ""
+        if ai_error:
+            await db_log("ai_failed", ai_error)
 
         async with Session() as s:
             post = SourcePost(
@@ -128,7 +131,9 @@ class Pipeline:
                 action, reason = decide(t.mode, d, settings.confidence_threshold)
                 if cap.message and analysis is None and action == "send":
                     # Aloqa bloki topilmagan holda ko'r-ko'rona yubormaymiz
-                    action, reason = "ask", "AI ishlamadi: aloqa bloki tekshirilmagan"
+                    action, reason = "ask", f"AI ishlamadi, post tekshirilmagan. {ai_error}"
+                elif ai_error and action == "ask" and t.mode != "manual":
+                    reason = f"AI ishlamadi. {ai_error}"
                 if not all(is_supported(m) for m in msgs):
                     action, reason = "ask", "Post turi avtomatik ko'chirilmaydi (so'rovnoma va h.k.)"
                 delivery = Delivery(
