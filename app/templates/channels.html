@@ -16,13 +16,14 @@
 <h2>Qabul qiluvchi kanallar</h2>
 <div class="scroll">
 <table>
-<thead><tr><th>Kanal</th><th>Username</th><th>Rejim</th><th>Holat</th><th></th></tr></thead>
+<thead><tr><th>Kanal</th><th>Username</th><th>Rejim</th><th>Menejer</th><th>Holat</th><th></th></tr></thead>
 <tbody>
 {% for t in targets %}
 <tr>
 <td><strong>{{ t.name }}</strong></td>
 <td>@{{ t.username }}</td>
 <td>{{ modes[t.mode] }}</td>
+<td>{% if not t.manager_phones %}<span class="muted">kiritilmagan</span>{% elif t.manager_ids %}<span class="ok">bog'langan ({{ t.manager_ids|length }})</span>{% else %}<span class="warn">/start bosmagan</span>{% endif %}</td>
 <td>{% if t.active %}<span class="ok">Faol</span>{% else %}<span class="muted">To'xtatilgan</span>{% endif %}</td>
 <td class="num">
 <a class="btn" href="/channels/{{ t.id }}/stats">Analitika</a>
@@ -31,7 +32,7 @@
 </td>
 </tr>
 {% else %}
-<tr><td colspan="5" class="muted">Hali kanal qo'shilmagan.</td></tr>
+<tr><td colspan="6" class="muted">Hali kanal qo'shilmagan.</td></tr>
 {% endfor %}
 </tbody>
 </table>

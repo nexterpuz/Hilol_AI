@@ -84,8 +84,8 @@ def test_bot_keyboard_and_button_presses(monkeypatch):
         return [b.button.text for row in rows for b in row]
 
     assert labels(keyboard(False, True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE]
-    assert labels(keyboard(True, False)) == [BTN_WEEK, BTN_MONTH, BTN_STATE, BTN_STOP]
-    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, BTN_STATE, BTN_RESUME]
+    assert labels(keyboard(True, False)) == [BTN_WEEK, BTN_MONTH, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS]
+    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS]
 
     class Ev:
         def __init__(self, sender, text):
@@ -126,3 +126,44 @@ def test_bot_keyboard_and_button_presses(monkeypatch):
     assert paused and BTN_RESUME in stop[0][1]  # to'xtatilgach tugma "Davom ettirish" ga almashadi
     assert not after and BTN_STOP in resume[0][1]
     assert stranger == [] and "Agent holati" in state[0][0]
+
+
+def test_managers_report():
+    """Bosh admin qaysi filial menejeri bog'langanini va qaysi biri /start bosmaganini ko'radi."""
+    from types import SimpleNamespace as NS
+
+    from sqlalchemy import update
+
+    from app.adminbot import BTN_MANAGERS, AdminBot, managers_report
+
+    class Ev:
+        def __init__(self, sender, text):
+            self.sender_id, self.raw_text, self.message, self.out = sender, text, NS(contact=None), []
+
+        async def respond(self, text, buttons=None, parse_mode=None):
+            self.out.append(text)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))  # boshqa testlardan qolgan kanallar aralashmasin
+            s.add_all([
+                Target(name="M-Bog'langan", username="mgr_1", manager_phones="+998 90 111 00 01", manager_ids={"9001": "901110001"}),
+                Target(name="M-Qisman", username="mgr_2", manager_phones="+998 90 111 00 02, +998 90 111 00 03", manager_ids={"9002": "901110002"}),
+                Target(name="M-Bosmagan", username="mgr_3", manager_phones="+998 90 111 00 04"),
+                Target(name="M-Raqamsiz", username="mgr_4"),
+            ])
+            await s.commit()
+        bot = AdminBot()
+        await bot._on_message(Ev(9001, "/navbat"))  # menejer faolligi yoziladi
+        admin, stranger = Ev(777, BTN_MANAGERS), Ev(9001, BTN_MANAGERS)
+        await bot._on_message(admin)
+        await bot._on_message(stranger)
+        return admin.out[0], stranger.out, await managers_report()
+
+    text, stranger, again = asyncio.run(run())
+    assert "✅ M-Bog'langan" in text and "oxirgi faollik" in text
+    assert "🟡 M-Qisman" in text and "+998 90 111 00 03 — botga /start bosmagan" in text
+    assert "❌ M-Bosmagan" in text and "⚠️ M-Raqamsiz" in text and "raqam kiritilmagan" in text
+    assert "Jami: 4 ta filialdan 2 tasida menejer bog'langan." in text and text == again
+    assert not any("Filial menejerlari" in t for t in stranger)  # menejer bu ro'yxatni ko'ra olmaydi

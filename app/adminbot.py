@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from sqlalchemy import select
 from telethon import Button, TelegramClient, events
@@ -18,9 +19,11 @@ log = logging.getLogger(__name__)
 BTN_WEEK, BTN_MONTH = "📊 Haftalik hisobot", "📅 Oylik hisobot"
 BTN_QUEUE, BTN_STATE = "📥 Kutayotgan postlar", "ℹ️ Holat"
 BTN_STOP, BTN_RESUME = "⏸ To'xtatish", "▶️ Davom ettirish"
+BTN_MANAGERS = "👥 Menejerlar"
 ALIASES = {
     BTN_WEEK.lower(): "/hisobot", BTN_MONTH.lower(): "/hisobot_oy", BTN_QUEUE.lower(): "/navbat",
     BTN_STATE.lower(): "/holat", BTN_STOP.lower(): "/stop", BTN_RESUME.lower(): "/resume",
+    BTN_MANAGERS.lower(): "/menejerlar",
 }
 
 
@@ -35,7 +38,45 @@ def keyboard(is_admin: bool, is_manager: bool, paused: bool = False):
         second.append(Button.text(BTN_RESUME if paused else BTN_STOP))
     if second:
         rows.append(second)
+    if is_admin:
+        rows.append([Button.text(BTN_MANAGERS)])
     return rows
+
+
+async def managers_report() -> str:
+    """Qaysi filial menejeri botga bog'langan, qaysi biri hali /start bosmagan."""
+    from datetime import datetime, timedelta, timezone
+
+    tz = timezone(timedelta(hours=5))
+    async with Session() as s:
+        targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
+    lines, ready = ["👥 Filial menejerlari", ""], 0
+    for t in targets:
+        phones = [p.strip() for p in re.split(r"[,;\n]", t.manager_phones or "") if phone_key(p)]
+        bound = {key: uid for uid, key in (t.manager_ids or {}).items()}
+        seen = t.manager_seen or {}
+        if not phones:
+            lines += [f"⚠️ {t.name}", "   raqam kiritilmagan (paneldagi kanal sozlamasida)", ""]
+            continue
+        done = [p for p in phones if phone_key(p) in bound]
+        ready += bool(done)
+        lines.append(f"{'✅' if len(done) == len(phones) else ('🟡' if done else '❌')} {t.name}")
+        for p in phones:
+            uid = bound.get(phone_key(p))
+            if uid is None:
+                lines.append(f"   {p} — botga /start bosmagan")
+                continue
+            when = seen.get(uid)
+            try:
+                when = datetime.fromisoformat(when).astimezone(tz).strftime("%d.%m %H:%M") if when else ""
+            except ValueError:
+                when = ""
+            lines.append(f"   {p} — bog'langan" + (f", oxirgi faollik {when}" if when else ""))
+        lines.append("")
+    if not targets:
+        return "Hali faol filial kanali yo'q."
+    lines.append(f"Jami: {len(targets)} ta filialdan {ready} tasida menejer bog'langan.")
+    return "\n".join(lines)
 
 
 def preview(text: str) -> str:
@@ -115,6 +156,19 @@ class AdminBot:
             targets = list((await s.execute(select(Target))).scalars())
         return [t for t in targets if str(user_id) in (t.manager_ids or {})]
 
+    async def _touch(self, user_id: int) -> None:
+        """Menejerning oxirgi faollik vaqtini yozadi."""
+        from datetime import datetime, timezone
+
+        async with Session() as s:
+            changed = False
+            for t in (await s.execute(select(Target))).scalars():
+                if str(user_id) in (t.manager_ids or {}):
+                    t.manager_seen = {**(t.manager_seen or {}), str(user_id): datetime.now(timezone.utc).isoformat()}
+                    changed = True
+            if changed:
+                await s.commit()
+
     async def _send_pending(self, user_id: int, targets: list) -> int:
         ids = [t.id for t in targets]
         names = {t.id: t.name for t in targets}
@@ -165,8 +219,11 @@ class AdminBot:
         is_admin = uid in settings.admin_ids
         if event.message.contact:
             await self._bind(event)
+            await self._touch(uid)
             return
         mine = await self._targets_of(uid)
+        if mine:
+            await self._touch(uid)
 
         async def kb():
             return keyboard(is_admin, bool(mine), await is_paused())
@@ -179,6 +236,8 @@ class AdminBot:
         elif is_admin and text in ("/resume", "/davom"):
             await set_paused(False)
             await event.respond("Agent davom ettirildi. To'xtatilgan paytda to'plangan postlar Tasdiq navbatida turibdi.", buttons=await kb())
+        elif is_admin and text == "/menejerlar":
+            await event.respond(await managers_report(), buttons=await kb(), parse_mode=None)
         elif is_admin and text == "/holat":
             state = "TO'XTATILGAN" if await is_paused() else "ishlayapti"
             linked = "ulangan" if self.pipeline is not None else "ULANMAGAN"
@@ -223,6 +282,7 @@ class AdminBot:
             if target is None or str(event.sender_id) not in (target.manager_ids or {}):
                 await event.answer("Ruxsat yo'q", alert=True)
                 return
+            await self._touch(event.sender_id)
         if action == "ok":
             # Bosh admin qarori eslab qolinadi; menejerniki — yo'q (har bir kitob alohida tasdiqlanadi)
             done = await (self.pipeline.approve(delivery_id) if is_admin else self.pipeline.publish(delivery_id))

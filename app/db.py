@@ -55,6 +55,7 @@ class Target(Base):
     # Filial menejerlari: sotuv postlarini o'z filiali uchun bot orqali tasdiqlaydi
     manager_phones: Mapped[str] = mapped_column(Text, default="", server_default="")
     manager_ids: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {telegram id: telefon kaliti}
+    manager_seen: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {telegram id: oxirgi faollik vaqti}
     branch_approval: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     sync_edits: Mapped[bool] = mapped_column(Boolean, default=True)
     sync_deletes: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -169,7 +170,7 @@ def _migrate(conn) -> None:
         "deliveries": {"cut_line": "INTEGER", "closing": "VARCHAR(10)"},
         "targets": {
             "signature_html": "TEXT DEFAULT '' NOT NULL", "manager_phones": "TEXT DEFAULT '' NOT NULL",
-            "manager_ids": "JSON", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",
+            "manager_ids": "JSON", "manager_seen": "JSON", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",
         },
     }
     inspector = inspect(conn)
