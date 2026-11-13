@@ -23,7 +23,7 @@ class AdminBot:
     async def say(self, text: str, buttons=None) -> None:
         for admin in settings.admin_ids:
             try:
-                await self.bot.send_message(admin, text, buttons=buttons, parse_mode=None)
+                await self.bot.send_message(admin, text, buttons=buttons, parse_mode=None, link_preview=False)
             except Exception:
                 # Admin botga /start bosmagan bo'lsa, bot unga yoza olmaydi
                 log.exception("Adminga xabar yuborilmadi: %s", admin)

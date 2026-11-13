@@ -131,9 +131,8 @@ class Pipeline:
                 action, reason = decide(t.mode, d, settings.confidence_threshold)
                 if cap.message and analysis is None and action == "send":
                     # Aloqa bloki topilmagan holda ko'r-ko'rona yubormaymiz
-                    action, reason = "ask", f"AI ishlamadi, post tekshirilmagan. {ai_error}"
-                elif ai_error and action == "ask" and t.mode != "manual":
-                    reason = f"AI ishlamadi. {ai_error}"
+                    # Qisqa sabab; texnik tafsilot faqat Jurnal sahifasida
+                    action, reason = "ask", "AI ishlamadi: aloqa bloki tekshirilmagan"
                 if not all(is_supported(m) for m in msgs):
                     action, reason = "ask", "Post turi avtomatik ko'chirilmaydi (so'rovnoma va h.k.)"
                 delivery = Delivery(

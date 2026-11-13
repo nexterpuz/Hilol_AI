@@ -156,8 +156,9 @@ async def scenario(monkeypatch):
         from app.db import Event
 
         d = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()))).scalars().first()
-        assert d.status == "pending" and "mablag' tugagan" in d.reason
-        assert (await s.execute(select(Event).where(Event.kind == "ai_failed"))).scalars().first() is not None
+        assert d.status == "pending" and d.reason == "AI ishlamadi: aloqa bloki tekshirilmagan"
+        ev = (await s.execute(select(Event).where(Event.kind == "ai_failed"))).scalars().first()
+        assert ev is not None and "mablag' tugagan" in ev.detail  # tafsilot faqat jurnalda
     monkeypatch.setattr(ai, "analyze", fake_analyze)
 
     # o'chirish
