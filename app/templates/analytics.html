@@ -11,6 +11,17 @@
 </div>
 
 <section class="card">
+<h2>Unikal auditoriya</h2>
+<div class="grid">
+<div class="kpi"><div class="muted">Jami obunalar</div><div class="v" id="a-total">—</div><div class="muted">barcha kanallar yig'indisi</div></div>
+<div class="kpi"><div class="muted">Unikal obunachilar</div><div class="v" id="a-unique">—</div><div class="muted">har bir odam bir marta sanalgan</div></div>
+<div class="kpi"><div class="muted">Bir nechta kanalda</div><div class="v" id="a-multi">—</div><div class="muted">ikki va undan ortiq kanalga obuna</div></div>
+<div class="kpi"><div class="muted">Ro'yxat qamrovi</div><div class="v" id="a-cov">—</div><div class="muted" id="a-cov-note">obunachilarning qancha qismi ko'rindi</div></div>
+</div>
+<div class="note" id="a-note" hidden></div>
+</section>
+
+<section class="card">
 <div class="row between">
 <h2>Kanallarni solishtirish</h2>
 <div class="seg" id="metric" role="group" aria-label="Ko'rsatkich">
@@ -21,8 +32,8 @@
 <div class="chart" id="compare-box"><canvas id="compare" role="img" aria-label="Kanallar tanlangan ko'rsatkich bo'yicha"></canvas></div>
 <div class="scroll">
 <table>
-<thead><tr><th>#</th><th>Kanal</th><th class="num">Obunachi</th><th class="num">O'sish</th><th class="num">Postlar</th><th class="num">O'rtacha ko'rish</th><th class="num">Qamrov</th><th>Baho</th></tr></thead>
-<tbody id="rank"><tr><td colspan="8" class="muted">Yuklanmoqda…</td></tr></tbody>
+<thead><tr><th>#</th><th>Kanal</th><th class="num">Obunachi</th><th class="num">O'sish</th><th class="num">Postlar</th><th class="num">O'rtacha ko'rish</th><th class="num">Qamrov</th><th class="num">Faqat shu kanalda</th><th class="num">Boshqasida ham bor</th><th>Baho</th></tr></thead>
+<tbody id="rank"><tr><td colspan="10" class="muted">Yuklanmoqda…</td></tr></tbody>
 </table>
 </div>
 </section>
@@ -76,8 +87,22 @@ function drawCompare() {
     let verdict = '<span class="muted">Ma\'lumot yetarli emas</span>';
     if (!c.active) verdict = '<span class="muted">To\'xtatilgan</span>';
     else if (c.reach !== null && avg !== null) verdict = c.reach < avg * 0.8 ? '<span class="low">▼ O\'rtachadan past</span>' : c.reach > avg * 1.2 ? '<span class="ok">▲ O\'rtachadan yuqori</span>' : "O'rtacha";
-    return `<tr><td>${i + 1}</td><td><a href="/channels/${c.id}/stats"><strong>${esc(c.name)}</strong></a></td><td class="num">${fmt(c.subs)}</td><td class="num">${signed(c.growth)}${c.growth_pct !== null ? " (" + signed(c.growth_pct) + "%)" : ""}</td><td class="num">${c.posts}</td><td class="num">${fmt(c.views)}</td><td class="num">${fmt(c.reach, "%")}</td><td>${verdict}</td></tr>`;
-  }).join("") || '<tr><td colspan="8" class="muted">Hali kanal yo\'q.</td></tr>';
+    return `<tr><td>${i + 1}</td><td><a href="/channels/${c.id}/stats"><strong>${esc(c.name)}</strong></a></td><td class="num">${fmt(c.subs)}</td><td class="num">${signed(c.growth)}${c.growth_pct !== null ? " (" + signed(c.growth_pct) + "%)" : ""}</td><td class="num">${c.posts}</td><td class="num">${fmt(c.views)}</td><td class="num">${fmt(c.reach, "%")}</td><td class="num">${fmt(c.only_here)}</td><td class="num">${fmt(c.shared)}</td><td>${verdict}</td></tr>`;
+  }).join("") || '<tr><td colspan="10" class="muted">Hali kanal yo\'q.</td></tr>';
+  drawAudience(compare.audience);
+}
+
+function drawAudience(a) {
+  const has = a.listed > 0;
+  document.getElementById("a-total").textContent = fmt(a.total_subs);
+  document.getElementById("a-unique").textContent = has ? fmt(a.unique) : "—";
+  document.getElementById("a-multi").textContent = has ? fmt(a.multi) : "—";
+  document.getElementById("a-cov").textContent = fmt(a.coverage, "%");
+  const note = document.getElementById("a-note");
+  note.hidden = false;
+  if (!has) { note.className = "note"; note.textContent = "Obunachilar ro'yxati hali yig'ilmagan. U agent ishga tushgach va keyin har 6 soatda yangilanadi."; }
+  else if (a.coverage !== null && a.coverage < 95) { note.className = "note warn"; note.textContent = `Diqqat: Telegram kanal adminiga ham faqat oxirgi 200 ga yaqin obunachini ko'rsatadi. Hozir obunachilarning ${a.coverage}% i ko'rindi (${fmt(a.listed)} / ${fmt(a.total_subs)}), shuning uchun unikal son va kesishma faqat shu qism bo'yicha hisoblangan — to'liq auditoriya uchun aniq emas.`; }
+  else { note.className = "note ok"; note.textContent = "Barcha obunachilar ro'yxati olingan: sonlar aniq."; }
 }
 
 const tip = document.getElementById("tip");

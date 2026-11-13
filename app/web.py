@@ -16,7 +16,7 @@ from sqlalchemy import delete, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import EPHEMERAL_DB, settings
-from .db import Decision, Delivery, Event, Setting, Rule, Session, SourcePost, StatChannel, StatPost, Target, now
+from .db import Decision, Delivery, Event, Setting, Rule, Session, SourcePost, StatChannel, StatPost, Subscriber, Target, now
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 MODES = {"auto": "Avto", "smart": "Aqlli", "manual": "Qo'lda"}
@@ -157,7 +157,29 @@ async def compare_data(days: int) -> dict:
             "growth_pct": round(100 * growth / start, 1) if start else None,
             "posts": r["posts"], "views": r["views"], "reach": r["reach"],
         })
-    return {"channels": channels, "avg_reach": data["avg_reach"], "days": days}
+    # Unikal auditoriya: bir odam bir nechta kanalda bo'lsa bir marta sanaladi
+    async with Session() as s:
+        rows = (await s.execute(select(Subscriber.target_id, Subscriber.user_hash))).all()
+    members: dict = defaultdict(set)
+    for target_id, h in rows:
+        members[target_id].add(h)
+    seen: dict = defaultdict(int)  # xesh -> nechta kanalda uchraydi
+    for hashes in members.values():
+        for h in hashes:
+            seen[h] += 1
+    for c in channels:
+        mine = members.get(c["id"], set())
+        c["listed"] = len(mine) if mine else None
+        c["only_here"] = sum(1 for h in mine if seen[h] == 1) if mine else None
+        c["shared"] = sum(1 for h in mine if seen[h] > 1) if mine else None
+    listed = sum(len(m) for m in members.values())
+    total_subs = sum(c["subs"] or 0 for c in channels)
+    audience = {
+        "listed": listed, "unique": len(seen), "multi": sum(1 for n in seen.values() if n > 1),
+        "total_subs": total_subs or None,
+        "coverage": round(100 * min(listed, total_subs) / total_subs) if total_subs and listed else None,
+    }
+    return {"channels": channels, "avg_reach": data["avg_reach"], "days": days, "audience": audience}
 
 
 async def _deliveries_with_stats(since: datetime, target_id: int | None = None):
@@ -469,6 +491,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                 await s.execute(delete(Delivery).where(Delivery.id.in_(ids)))
             await s.execute(delete(StatChannel).where(StatChannel.target_id == target_id))
             await s.execute(delete(Decision).where(Decision.target_id == target_id))
+            await s.execute(delete(Subscriber).where(Subscriber.target_id == target_id))
             await s.execute(delete(Target).where(Target.id == target_id))
             await s.commit()
         return _go("/channels")

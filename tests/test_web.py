@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from fastapi.testclient import TestClient
 
-from app.db import Delivery, Rule, Session, SourcePost, StatChannel, StatPost, Target, init_db, now
+from app.db import Delivery, Rule, Session, SourcePost, StatChannel, StatPost, Subscriber, Target, init_db, now
 from app.web import create_app, svg_points
 
 
@@ -269,3 +269,70 @@ def test_views_at():
     assert views_at(snaps, sent, 24, now()) == 400
     assert views_at(snaps, sent, 72, now()) is None  # hali 72 soat o'tmagan
     assert views_at([], sent, 1, now()) is None
+
+
+def test_unique_audience():
+    """Bir odam ikki kanalda bo'lsa bir marta sanaladi."""
+    from app.web import compare_data
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            a, b = Target(name="U1", username="uniq_1"), Target(name="U2", username="uniq_2")
+            s.add_all([a, b])
+            await s.flush()
+            s.add_all([StatChannel(target_id=a.id, subscribers=3), StatChannel(target_id=b.id, subscribers=2)])
+            for h in ("x1", "x2", "x3"):
+                s.add(Subscriber(target_id=a.id, user_hash=h))
+            for h in ("x3", "x4"):
+                s.add(Subscriber(target_id=b.id, user_hash=h))
+            await s.commit()
+            ids = (a.id, b.id)
+        data = await compare_data(30)
+        rows = {c["id"]: c for c in data["channels"]}
+        return rows[ids[0]], rows[ids[1]], data["audience"]
+
+    a, b, aud = asyncio.run(run())
+    assert (a["listed"], a["only_here"], a["shared"]) == (3, 2, 1)
+    assert (b["listed"], b["only_here"], b["shared"]) == (2, 1, 1)
+    assert aud["multi"] >= 1 and aud["unique"] >= 4 and aud["unique"] == aud["listed"] - aud["multi"]
+
+
+def test_collect_subscribers_hashes_and_skips_bots():
+    from types import SimpleNamespace as U
+
+    from sqlalchemy import select
+
+    from app import stats
+
+    class Client:
+        def iter_participants(self, username):
+            async def gen():
+                for u in (U(id=1, bot=False, deleted=False), U(id=2, bot=True, deleted=False), U(id=3, bot=False, deleted=True), U(id=4, bot=False, deleted=False)):
+                    yield u
+            return gen()
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            t = Target(name="H", username="hash_1")
+            s.add(t)
+            await s.commit()
+            tid = t.id
+        orig = asyncio.sleep
+
+        async def nosleep(_):
+            await orig(0)
+
+        stats.asyncio.sleep = nosleep
+        try:
+            await stats.collect_subscribers(Client())
+            await stats.collect_subscribers(Client())  # takror yig'ish ro'yxatni almashtiradi, ko'paytirmaydi
+        finally:
+            stats.asyncio.sleep = orig
+        async with Session() as s:
+            return [r for r in (await s.execute(select(Subscriber.user_hash).where(Subscriber.target_id == tid))).scalars()]
+
+    hashes = asyncio.run(run())
+    assert len(hashes) == 2 and all(len(h) == 64 for h in hashes) and "1" not in hashes  # ID emas, xesh
+    assert stats.user_hash(1) in hashes and stats.user_hash(4) in hashes

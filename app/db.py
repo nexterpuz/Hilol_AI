@@ -127,6 +127,19 @@ class StatChannel(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class Subscriber(Base):
+    """Kanal obunachisi (unikal auditoriyani hisoblash uchun).
+
+    Maxfiylik uchun Telegram ID ning o'zi emas, qaytarib bo'lmaydigan xeshi saqlanadi:
+    bir odam ikki kanalda bo'lsa xeshlar mos keladi, lekin kimligini tiklab bo'lmaydi.
+    """
+
+    __tablename__ = "subscribers"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"), index=True)
+    user_hash: Mapped[str] = mapped_column(String(64), index=True)
+
+
 class StatPost(Base):
     __tablename__ = "stats_post"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
