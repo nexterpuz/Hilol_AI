@@ -14,6 +14,30 @@ from .pipeline import is_paused, phone_key, phone_keys, preview_text, set_paused
 log = logging.getLogger(__name__)
 
 
+# Pastki tugmalar: buyruqlarni qo'lda yozmaslik uchun
+BTN_WEEK, BTN_MONTH = "📊 Haftalik hisobot", "📅 Oylik hisobot"
+BTN_QUEUE, BTN_STATE = "📥 Kutayotgan postlar", "ℹ️ Holat"
+BTN_STOP, BTN_RESUME = "⏸ To'xtatish", "▶️ Davom ettirish"
+ALIASES = {
+    BTN_WEEK.lower(): "/hisobot", BTN_MONTH.lower(): "/hisobot_oy", BTN_QUEUE.lower(): "/navbat",
+    BTN_STATE.lower(): "/holat", BTN_STOP.lower(): "/stop", BTN_RESUME.lower(): "/resume",
+}
+
+
+def keyboard(is_admin: bool, is_manager: bool, paused: bool = False):
+    """Foydalanuvchi roliga mos pastki tugmalar."""
+    rows = [[Button.text(BTN_WEEK, resize=True), Button.text(BTN_MONTH)]]
+    second = []
+    if is_manager:
+        second.append(Button.text(BTN_QUEUE))
+    if is_admin:
+        second.append(Button.text(BTN_STATE))
+        second.append(Button.text(BTN_RESUME if paused else BTN_STOP))
+    if second:
+        rows.append(second)
+    return rows
+
+
 def preview(text: str) -> str:
     return text if len(text) <= 600 else text[:600] + "…"
 
@@ -128,24 +152,37 @@ class AdminBot:
         await event.respond(
             f"Tasdiqlandi. Siz bog'langan filial: {names}.\n"
             "Endi yangi nashr va «tez kunda» postlari sizga keladi: kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosasiz.\n"
-            "Kutayotgan postlarni ko'rish: /navbat\n"
-            "Har yakshanba va oy oxirida soat 18:00 da filialingiz hisoboti keladi. Hozir ko'rish: /hisobot",
-            buttons=Button.clear(),
+            "Har yakshanba va oy oxirida soat 18:00 da filialingiz hisoboti keladi.\n"
+            "Pastdagi tugmalar orqali hisobotni va kutayotgan postlarni istagan payt ko'rasiz.",
+            buttons=keyboard(event.sender_id in settings.admin_ids, True, await is_paused()),
         )
         await self.say(f"Filial menejeri bog'landi — {names} (Telegram ID {event.sender_id}).")
         await self._send_pending(event.sender_id, bound)
 
     async def _on_message(self, event) -> None:
         uid, text = event.sender_id, (event.raw_text or "").strip().lower()
+        text = ALIASES.get(text, text)  # pastki tugma bosilgan bo'lsa — mos buyruq
         is_admin = uid in settings.admin_ids
         if event.message.contact:
             await self._bind(event)
-        elif is_admin and text in ("/stop", "/toxtat"):
+            return
+        mine = await self._targets_of(uid)
+
+        async def kb():
+            return keyboard(is_admin, bool(mine), await is_paused())
+
+        if is_admin and text in ("/stop", "/toxtat"):
             await set_paused(True)
-            await event.respond("Favqulodda to'xtatish yoqildi: yangi postlar filiallarga chiqmaydi, navbatda to'planadi. Davom ettirish: /resume")
+            await event.respond(
+                "Favqulodda to'xtatish yoqildi: yangi postlar filiallarga chiqmaydi, navbatda to'planadi.", buttons=await kb()
+            )
         elif is_admin and text in ("/resume", "/davom"):
             await set_paused(False)
-            await event.respond("Agent davom ettirildi. To'xtatilgan paytda to'plangan postlar Tasdiq navbatida turibdi.")
+            await event.respond("Agent davom ettirildi. To'xtatilgan paytda to'plangan postlar Tasdiq navbatida turibdi.", buttons=await kb())
+        elif is_admin and text == "/holat":
+            state = "TO'XTATILGAN" if await is_paused() else "ishlayapti"
+            linked = "ulangan" if self.pipeline is not None else "ULANMAGAN"
+            await event.respond(f"Agent holati: {state}.\nTelegram akkaunt: {linked}.", buttons=await kb())
         elif text in ("/hisobot", "/hisobot_oy"):
             from . import reports
 
@@ -153,19 +190,21 @@ class AdminBot:
             if not await reports.send_reports(self, kind, only_user=uid):
                 await event.respond("Sizga tegishli hisobot yo'q. Avval /start orqali filialga bog'laning.")
         elif text.startswith("/start") or text == "/navbat":
-            mine = await self._targets_of(uid)
             if is_admin and text.startswith("/start"):
                 state = "TO'XTATILGAN" if await is_paused() else "ishlayapti"
-                await event.respond(f"Siz bosh adminsiz. Agent holati: {state}.\nBuyruqlar: /stop — favqulodda to'xtatish, /resume — davom ettirish, /hisobot — haftalik hisobot, /hisobot_oy — oylik hisobot.")
+                await event.respond(f"Siz bosh adminsiz. Agent holati: {state}.\nPastdagi tugmalardan foydalaning.", buttons=await kb())
             if mine:
                 count = await self._send_pending(uid, mine)
                 names = ", ".join(t.name for t in mine)
-                await event.respond(f"Filial: {names}. Kutayotgan postlar: {count} ta." if count else f"Filial: {names}. Kutayotgan post yo'q.")
+                await event.respond(
+                    f"Filial: {names}. Kutayotgan postlar: {count} ta." if count else f"Filial: {names}. Kutayotgan post yo'q.",
+                    buttons=await kb(),
+                )
             elif not is_admin:
                 await event.respond(
                     "Assalomu alaykum! Bu bot filial menejerlari uchun.\n"
                     "Filialingizni aniqlash uchun pastdagi tugma orqali telefon raqamingizni ulashing.",
-                    buttons=Button.request_phone("Raqamni ulashish", resize=True, single_use=True),
+                    buttons=Button.request_phone("📱 Raqamni ulashish", resize=True, single_use=True),
                 )
 
     # ---------- tugmalar ----------

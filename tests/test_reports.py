@@ -71,3 +71,58 @@ def test_render_and_send():
         im = Image.open(io.BytesIO(image))
         assert im.format == "PNG" and im.width == 1080 and 900 < im.height < 3000
     assert len(only) == 1 and only[0][0] == ["4242"] and "Oylik hisobot" in only[0][2]  # qo'lda so'ralganda faqat o'ziga
+
+
+def test_bot_keyboard_and_button_presses(monkeypatch):
+    """Pastki tugmalar rolga mos chiqadi va bosilganda mos buyruq bajariladi."""
+    from types import SimpleNamespace as NS
+
+    from app import adminbot, pipeline
+    from app.adminbot import BTN_MONTH, BTN_QUEUE, BTN_RESUME, BTN_STATE, BTN_STOP, BTN_WEEK, AdminBot, keyboard
+
+    def labels(rows):
+        return [b.button.text for row in rows for b in row]
+
+    assert labels(keyboard(False, True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE]
+    assert labels(keyboard(True, False)) == [BTN_WEEK, BTN_MONTH, BTN_STATE, BTN_STOP]
+    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, BTN_QUEUE, BTN_STATE, BTN_RESUME]
+
+    class Ev:
+        def __init__(self, sender, text):
+            self.sender_id, self.raw_text = sender, text
+            self.message = NS(contact=None)
+            self.out = []
+
+        async def respond(self, text, buttons=None):
+            self.out.append((text, labels(buttons) if isinstance(buttons, list) else buttons))
+
+    calls = []
+
+    async def fake_reports(bot, kind, now_local=None, only_user=None):
+        calls.append((kind, only_user))
+        return 1
+
+    monkeypatch.setattr(reports, "send_reports", fake_reports)
+
+    async def run():
+        await init_db()
+        bot = AdminBot()
+        week, month = Ev(777, BTN_WEEK), Ev(777, BTN_MONTH)
+        await bot._on_message(week)
+        await bot._on_message(month)
+        stop = Ev(777, BTN_STOP)
+        await bot._on_message(stop)
+        paused = await pipeline.is_paused()
+        resume = Ev(777, BTN_RESUME)
+        await bot._on_message(resume)
+        stranger = Ev(31337, BTN_STOP)  # begona odam to'xtata olmaydi
+        await bot._on_message(stranger)
+        state = Ev(777, BTN_STATE)
+        await bot._on_message(state)
+        return stop.out, paused, resume.out, await pipeline.is_paused(), stranger.out, state.out
+
+    stop, paused, resume, after, stranger, state = asyncio.run(run())
+    assert calls == [("weekly", 777), ("monthly", 777)]
+    assert paused and BTN_RESUME in stop[0][1]  # to'xtatilgach tugma "Davom ettirish" ga almashadi
+    assert not after and BTN_STOP in resume[0][1]
+    assert stranger == [] and "Agent holati" in state[0][0]
