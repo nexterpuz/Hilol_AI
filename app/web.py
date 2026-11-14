@@ -28,7 +28,7 @@ def _go(path: str) -> RedirectResponse:
 
 
 async def dashboard_data(days: int) -> dict:
-    since = now() - timedelta(days=days)
+    since = period_start(days)
     async with Session() as s:
         targets = list((await s.execute(select(Target).order_by(Target.id))).scalars())
         chan = list((await s.execute(select(StatChannel).where(StatChannel.at >= since).order_by(StatChannel.at))).scalars())
@@ -76,6 +76,14 @@ async def dashboard_data(days: int) -> dict:
 
 
 TASHKENT = timezone(timedelta(hours=5))
+
+
+def period_start(days: int) -> datetime:
+    """Davr boshi. days=0 — bugun (Toshkent vaqti bo'yicha yarim tundan), qolganlari — shuncha kun oldin."""
+    if days == 0:
+        local = now().astimezone(TASHKENT)
+        return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    return now() - timedelta(days=days)
 EVENT_LABELS = {
     "new_post": "Yangi post", "sent": "Yuborildi", "failed": "Xatolik", "edited": "Tahrir sinxronlandi",
     "deleted": "O'chirish sinxronlandi", "account_started": "Akkaunt ulandi", "account_lost": "Akkaunt uzildi",
@@ -107,7 +115,7 @@ def _total(values: list) -> int | None:
 
 
 async def posts_data(days: int) -> dict:
-    since = now() - timedelta(days=days)
+    since = period_start(days)
     async with Session() as s:
         posts = list((await s.execute(
             select(SourcePost).where(SourcePost.created_at >= since).order_by(SourcePost.id.desc()).limit(100)
@@ -204,7 +212,7 @@ async def _deliveries_with_stats(since: datetime, target_id: int | None = None):
 
 
 async def channel_data(target_id: int, days: int) -> dict | None:
-    since = now() - timedelta(days=days)
+    since = period_start(days)
     async with Session() as s:
         target = await s.get(Target, target_id)
         if target is None:
@@ -242,7 +250,7 @@ async def channel_data(target_id: int, days: int) -> dict | None:
 
 async def besttime_data(days: int, target_id: int | None = None) -> dict:
     """Hafta kuni va soat bo'yicha o'rtacha qamrov (Toshkent vaqti)."""
-    since = now() - timedelta(days=days)
+    since = period_start(days)
     deliveries, _, views, reach = await _deliveries_with_stats(since, target_id)
     cutoff = now() - timedelta(hours=24)
     # Adolatli solishtirish uchun kamida 24 soat yig'ilgan postlar; ular bo'lmasa — borini olamiz
@@ -373,7 +381,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
     # ---------- analitika ----------
 
     def _days(days: int) -> int:
-        return days if days in (7, 30, 90) else 30
+        return days if days in (0, 7, 30, 90) else 30
 
     @app.get("/analytics")
     async def analytics(request: Request):

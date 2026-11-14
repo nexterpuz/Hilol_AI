@@ -146,6 +146,9 @@ def test_panel_flow():
 
     # analitika: solishtirish, kanal sahifasi, eng yaxshi vaqt
     assert c.get("/analytics").status_code == 200 and c.get(f"/channels/{target_id}/stats").status_code == 200
+    # "Bugun" davri (days=0)
+    assert c.get("/api/compare?days=0").status_code == 200
+    assert c.get(f"/api/channel/{target_id}?days=0").status_code == 200
     cmp_ = c.get("/api/compare?days=30").json()
     row = next(x for x in cmp_["channels"] if x["id"] == target_id)
     assert row["subs"] == 1100 and row["growth"] == 100 and row["growth_pct"] == 10.0 and row["reach"] == 40
@@ -364,3 +367,13 @@ def test_collect_subscribers_hashes_and_skips_bots():
     hashes = asyncio.run(run())
     assert len(hashes) == 2 and all(len(h) == 64 for h in hashes) and "1" not in hashes  # ID emas, xesh
     assert stats.user_hash(1) in hashes and stats.user_hash(4) in hashes
+
+
+def test_period_start_today():
+    from app.db import now
+    from app.web import TASHKENT, period_start
+
+    start = period_start(0).astimezone(TASHKENT)
+    assert start.hour == 0 and start.minute == 0 and start.date() == now().astimezone(TASHKENT).date()
+    assert timedelta(0) <= now() - period_start(0) < timedelta(days=1)
+    assert period_start(7) < now() - timedelta(days=6)
