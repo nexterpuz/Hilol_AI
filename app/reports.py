@@ -236,6 +236,8 @@ def due(now_local: datetime, last_weekly: str, last_monthly: str) -> list[str]:
 
 def period_of(kind: str, now_local: datetime) -> tuple[int, str, str]:
     """(kunlar soni, hisobot nomi, davr yozuvi)."""
+    if kind == "daily":
+        return 1, "Kunlik hisobot", f"{now_local.day} {MONTHS[now_local.month - 1]} {now_local.year}"
     if kind == "monthly":
         return now_local.day, "Oylik hisobot", f"{MONTHS[now_local.month - 1]} {now_local.year}"
     return 7, "Haftalik hisobot", period_label(now_local - timedelta(days=6), now_local)

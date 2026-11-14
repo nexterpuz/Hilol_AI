@@ -16,7 +16,8 @@ log = logging.getLogger(__name__)
 
 
 # Pastki tugmalar: buyruqlarni qo'lda yozmaslik uchun
-BTN_WEEK, BTN_MONTH = "📊 Haftalik hisobot", "📅 Oylik hisobot"
+BTN_REPORT = "📊 Hisobot"
+BTN_WEEK, BTN_MONTH = "📊 Haftalik hisobot", "📅 Oylik hisobot"  # eski tugmalar: ishlayveradi
 BTN_QUEUE, BTN_STATE = "📥 Kutayotgan postlar", "ℹ️ Holat"
 BTN_STOP, BTN_RESUME = "⏸ To'xtatish", "▶️ Davom ettirish"
 BTN_MANAGERS = "👥 Menejerlar"
@@ -25,7 +26,7 @@ BTN_SUGGEST = "💡 Taklif yuborish"
 BTN_RATING = "🏆 Reyting"
 MESSAGE_HEAD = "📢 Bosh admindan xabar:\n\n"
 ALIASES = {
-    BTN_WEEK.lower(): "/hisobot", BTN_MONTH.lower(): "/hisobot_oy", BTN_QUEUE.lower(): "/navbat",
+    BTN_REPORT.lower(): "/hisobot", BTN_WEEK.lower(): "/hisob_hafta", BTN_MONTH.lower(): "/hisob_oy", BTN_QUEUE.lower(): "/navbat",
     BTN_STATE.lower(): "/holat", BTN_STOP.lower(): "/stop", BTN_RESUME.lower(): "/resume",
     BTN_MANAGERS.lower(): "/menejerlar", BTN_MESSAGE.lower(): "/xabar", BTN_SUGGEST.lower(): "/taklif", BTN_RATING.lower(): "/reyting",
 }
@@ -33,7 +34,7 @@ ALIASES = {
 
 def keyboard(is_admin: bool, is_manager: bool, paused: bool = False):
     """Foydalanuvchi roliga mos pastki tugmalar."""
-    rows = [[Button.text(BTN_WEEK, resize=True), Button.text(BTN_MONTH)]]
+    rows = [[Button.text(BTN_REPORT, resize=True)]]
     if is_manager:
         rows.append([Button.text(BTN_RATING)])
     second = []
@@ -164,6 +165,18 @@ class AdminBot:
                 f"Filial menejeri botga bog'lanmagan — {target.name}\nSabab: {why}\n\nKanalda shunday chiqadi:\n\n{preview(text)}",
                 self._buttons(delivery_id),
             )
+
+    async def _report_choice(self, event, kind: str) -> None:
+        """Tanlangan davr bo'yicha hisobotni shu foydalanuvchiga yuboradi (admin — umumiy, menejer — o'z filiali)."""
+        from . import reports
+
+        if kind not in ("daily", "weekly", "monthly"):
+            return
+        sent = await reports.send_reports(self, kind, only_user=event.sender_id)
+        if hasattr(event, "data"):
+            await event.answer("Hisobot yuborildi" if sent else "Sizga tegishli hisobot yo'q", alert=not sent)
+        elif not sent:
+            await event.respond("Sizga tegishli hisobot yo'q. Avval /start orqali filialga bog'laning.")
 
     # ---------- menejerlarga xabar ----------
 
@@ -357,12 +370,18 @@ class AdminBot:
             state = "TO'XTATILGAN" if await is_paused() else "ishlayapti"
             linked = "ulangan" if self.pipeline is not None else "ULANMAGAN"
             await event.respond(f"Agent holati: {state}.\nTelegram akkaunt: {linked}.", buttons=await kb())
-        elif text in ("/hisobot", "/hisobot_oy"):
-            from . import reports
-
-            kind = "monthly" if text == "/hisobot_oy" else "weekly"
-            if not await reports.send_reports(self, kind, only_user=uid):
+        elif text == "/hisobot":
+            if is_admin or mine:
+                await event.respond("Qaysi davr uchun hisobot kerak?", buttons=[[
+                    Button.inline("Kunlik", data="rep:daily"),
+                    Button.inline("Haftalik", data="rep:weekly"),
+                    Button.inline("Oylik", data="rep:monthly"),
+                ]])
+            else:
                 await event.respond("Sizga tegishli hisobot yo'q. Avval /start orqali filialga bog'laning.")
+        elif text in ("/hisob_kun", "/hisob_hafta", "/hisobot_oy", "/hisob_oy"):
+            kind = {"/hisob_kun": "daily", "/hisob_hafta": "weekly"}.get(text, "monthly")
+            await self._report_choice(event, kind)
         elif text.startswith("/start") or text == "/navbat":
             if is_admin and text.startswith("/start"):
                 state = "TO'XTATILGAN" if await is_paused() else "ishlayapti"
@@ -385,6 +404,9 @@ class AdminBot:
 
     async def _on_click(self, event) -> None:
         action, _, raw_id = event.data.decode().partition(":")
+        if action == "rep":
+            await self._report_choice(event, raw_id)
+            return
         if action == "msg":
             if event.sender_id not in settings.admin_ids:
                 await event.answer("Ruxsat yo'q", alert=True)

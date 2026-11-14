@@ -78,14 +78,14 @@ def test_bot_keyboard_and_button_presses(monkeypatch):
     from types import SimpleNamespace as NS
 
     from app import adminbot, pipeline
-    from app.adminbot import BTN_MONTH, BTN_QUEUE, BTN_RESUME, BTN_STATE, BTN_STOP, BTN_WEEK, AdminBot, keyboard
+    from app.adminbot import BTN_MONTH, BTN_QUEUE, BTN_REPORT, BTN_RESUME, BTN_STATE, BTN_STOP, BTN_WEEK, AdminBot, keyboard
 
     def labels(rows):
         return [b.button.text for row in rows for b in row]
 
-    assert labels(keyboard(False, True)) == [BTN_WEEK, BTN_MONTH, adminbot.BTN_RATING, BTN_QUEUE, adminbot.BTN_SUGGEST]
-    assert labels(keyboard(True, False)) == [BTN_WEEK, BTN_MONTH, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
-    assert labels(keyboard(True, True, paused=True)) == [BTN_WEEK, BTN_MONTH, adminbot.BTN_RATING, BTN_QUEUE, adminbot.BTN_SUGGEST, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
+    assert labels(keyboard(False, True)) == [BTN_REPORT, adminbot.BTN_RATING, BTN_QUEUE, adminbot.BTN_SUGGEST]
+    assert labels(keyboard(True, False)) == [BTN_REPORT, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
+    assert labels(keyboard(True, True, paused=True)) == [BTN_REPORT, adminbot.BTN_RATING, BTN_QUEUE, adminbot.BTN_SUGGEST, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
 
     class Ev:
         def __init__(self, sender, text):
@@ -381,3 +381,52 @@ def test_daily_rating_flow(monkeypatch):
     assert "2-o'rin (3 ta filial ichida), kechaga nisbatan ↓1" in second_a
     assert "1-o'rin (3 ta filial ichida), kechaga nisbatan ↑1" in second_b
     assert len(press) == 1 and press[0][0] == ["5101"] and "kechaga nisbatan ↓1" in press[0][1]
+
+
+def test_report_menu_and_period_choice(monkeypatch):
+    """📊 Hisobot → Kunlik / Haftalik / Oylik tugmalari; tanlangan davr bo'yicha hisobot yuboriladi."""
+    from types import SimpleNamespace as NS
+
+    from app.adminbot import BTN_REPORT, AdminBot
+
+    class Ev:
+        def __init__(self, sender, text="", data=b""):
+            self.sender_id, self.raw_text, self.data = sender, text, data
+            self.message, self.out, self.answers = NS(contact=None, media=None), [], []
+
+        async def respond(self, text, buttons=None, parse_mode=None):
+            self.out.append((text, buttons))
+
+        async def answer(self, text="", alert=False):
+            self.answers.append((text, alert))
+
+    calls = []
+
+    async def fake_reports(bot, kind, now_local=None, only_user=None):
+        calls.append((kind, only_user))
+        return 1
+
+    monkeypatch.setattr(reports, "send_reports", fake_reports)
+
+    async def run():
+        await init_db()
+        bot = AdminBot()
+        menu = Ev(777, BTN_REPORT)
+        await bot._on_message(menu)
+        for data in (b"rep:daily", b"rep:weekly", b"rep:monthly"):
+            await bot._on_click(Ev(777, data=data))
+        stranger = Ev(31337, "/hisobot")
+        await bot._on_message(stranger)
+        return menu, stranger
+
+    menu, stranger = asyncio.run(run())
+    text, rows = menu.out[0]
+    assert text == "Qaysi davr uchun hisobot kerak?"
+    assert [b.type.data.decode() for b in rows[0]] == ["rep:daily", "rep:weekly", "rep:monthly"]
+    assert [b.text for b in rows[0]] == ["Kunlik", "Haftalik", "Oylik"]
+    assert calls == [("daily", 777), ("weekly", 777), ("monthly", 777)]
+    assert stranger.out[0][0].startswith("Sizga tegishli hisobot yo'q")
+
+
+def test_daily_period_label():
+    assert reports.period_of("daily", datetime(2026, 11, 14, 18, 0, tzinfo=T)) == (1, "Kunlik hisobot", "14 noyabr 2026")
