@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 
 import uvicorn
 from sqlalchemy import select
@@ -33,7 +34,16 @@ async def seed() -> str:
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # Oddiy yozuvlar stdout'ga, ogohlantirish va xatolar stderr'ga: Railway faqat haqiqiy xatolarni qizil ko'rsatadi
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    out = logging.StreamHandler(sys.stdout)
+    out.setFormatter(fmt)
+    out.addFilter(lambda r: r.levelno < logging.WARNING)
+    err = logging.StreamHandler(sys.stderr)
+    err.setFormatter(fmt)
+    err.setLevel(logging.WARNING)
+    logging.basicConfig(level=logging.INFO, handlers=[out, err])
+    logging.getLogger("telethon").setLevel(logging.WARNING)  # "Got difference", "Uploading file" kabi shovqin
     if not (settings.api_id and settings.api_hash):
         raise SystemExit("TG_API_ID va TG_API_HASH o'rnatilmagan")
     if settings.database_url.startswith("sqlite"):
