@@ -39,6 +39,9 @@ async def main() -> None:
     if settings.database_url.startswith("sqlite"):
         os.makedirs("data", exist_ok=True)
     await init_db()
+    from .pipeline import reset_stuck
+
+    await reset_stuck()
     log.info("Baza: %s", settings.database_url.split("://")[0])
     if EPHEMERAL_DB:
         log.error("DATABASE_URL o'rnatilmagan: vaqtinchalik SQLite ishlatilmoqda, har bir deployda barcha ma'lumot o'chadi!")

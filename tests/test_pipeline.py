@@ -242,6 +242,23 @@ async def scenario(monkeypatch):
     async with Session() as s:
         assert (await s.get(Delivery, d17.id)).cut_line == 2
 
+    # bitta post ikki marta bir vaqtda kelsa (ikki ulanish, qayta yetkazish) — faqat bir marta ko'chiriladi
+    store[30] = mk(30, "Poyga sinovi\n\n@hilolnashr", photo_id=300)
+    n = len(only(c.sent))
+    await asyncio.gather(p.on_new([store[30]]), p.on_new([store[30]]), p.on_new([store[30]]))
+    assert len(only(c.sent)) == n + 2  # ikki filialga bittadan, takrorsiz
+    async with Session() as s:
+        same = [x for x in (await s.execute(select(SourcePost).where(SourcePost.chat_id == CHAT))).scalars() if 30 in x.msg_ids]
+    assert len(same) == 1
+    # bitta nusxa uchun "Yuborish" ikki marta bir vaqtda bosilsa — bitta xabar chiqadi
+    store[31] = mk(31, "Tanlov e'loni\nАриза юбориш учун ёзинг\n\n@hilolnashr")
+    await p.on_new([store[31]])
+    async with Session() as s:
+        d31 = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine), Delivery.status == "pending").order_by(Delivery.id.desc()))).scalars().first()
+    n = len(only(c.sent))
+    results = await asyncio.gather(p.publish(d31.id), p.publish(d31.id))
+    assert sorted(results) == [False, True] and len(only(c.sent)) == n + 1
+
     # tasdiq talab qiladigan so'z: qolipga mos bo'lsa ham so'raladi
     store[11] = mk(11, "Jamoamizga taklif qilamiz\nАриза юбориш учун профилга ёзинг\n\n@hilolnashr")
     n = len(only(c.sent))
@@ -490,3 +507,47 @@ def test_branch_words_default():
     assert ask_word_in("🎉 «Таъвилот ал-Қуръон» китобининг 17–18-жузи нашр қилинди", DEFAULT_BRANCH_WORDS)
     assert ask_word_in("Тез кунда барча филиалларимизда сотувда бўлади", DEFAULT_BRANCH_WORDS)
     assert not ask_word_in("✨ «Кифоя» – фиқҳ илмини ўрганмоқчи бўлганлар учун\n👉 Нархи: 345 000 сўм", DEFAULT_BRANCH_WORDS)
+
+
+def test_reset_stuck_deliveries():
+    async def run():
+        await init_db()
+        async with Session() as s:
+            t = Target(name="Stuck", username="stuck_1")
+            post = SourcePost(chat_id=-55, msg_ids=[1], text="x")
+            s.add_all([t, post])
+            await s.flush()
+            d = Delivery(post_id=post.id, target_id=t.id, status="sending")
+            s.add(d)
+            await s.commit()
+            did = d.id
+        await pipeline.reset_stuck()
+        async with Session() as s:
+            return await s.get(Delivery, did)
+
+    d = asyncio.run(run())
+    assert d.status == "failed" and "uzildi" in d.reason
+
+
+def test_agent_start_is_serialized(monkeypatch):
+    """Parallel ikki start() chaqiruvi navbat bilan bajariladi (bir vaqtda ikkita mijoz ochilmaydi)."""
+    from app.agent import Agent
+
+    a = Agent("manba")
+    running, peak, order = 0, 0, []
+
+    async def fake_start(session):
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.01)
+        order.append(session)
+        running -= 1
+
+    monkeypatch.setattr(a, "_start", fake_start)
+
+    async def run():
+        await asyncio.gather(a.start("s1"), a.start("s2"), a.start("s3"))
+
+    asyncio.run(run())
+    assert peak == 1 and sorted(order) == ["s1", "s2", "s3"]

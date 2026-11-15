@@ -6,13 +6,14 @@ import logging
 import re
 from difflib import SequenceMatcher
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from telethon import TelegramClient
 from telethon.tl.types import MessageMediaWebPage
 
 from . import ai, rules as fallback
 from .config import settings
-from .db import Decision, Delivery, Rule, Setting, Session, SourcePost, Target, log as db_log, now
+from .db import Decision, Delivery, Rule, Seen, Setting, Session, SourcePost, Target, log as db_log, now
 from .textops import build_post, fits, message_to_template, parse_message_link
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,16 @@ def phone_key(phone: str) -> str:
 
 def phone_keys(phones: str) -> set[str]:
     return {k for k in (phone_key(x) for x in re.split(r"[,;\n]", phones or "")) if k}
+
+
+async def reset_stuck() -> None:
+    """Ishga tushganda: yuborish paytida uzilib qolgan nusxalarni navbatga qaytaradi."""
+    async with Session() as s:
+        await s.execute(
+            update(Delivery).where(Delivery.status == "sending")
+            .values(status="failed", reason="Yuborish paytida jarayon uzildi — kanalni tekshirib, kerak bo'lsa qayta yuboring")
+        )
+        await s.commit()
 
 
 async def is_paused() -> bool:
@@ -166,10 +177,23 @@ class Pipeline:
 
     # ---------- yangi post ----------
 
+    async def _claim(self, chat_id: int, msg_id: int) -> bool:
+        """Xabarni qayta ishlashga "band qiladi". Faqat birinchi chaqiruv True oladi."""
+        async with Session() as s:
+            s.add(Seen(chat_id=chat_id, msg_id=msg_id))
+            try:
+                await s.commit()
+                return True
+            except IntegrityError:
+                await s.rollback()
+                return False
+
     async def on_new(self, msgs: list) -> None:
         msgs = sorted(msgs, key=lambda m: m.id)
         ids = [m.id for m in msgs]
         cap = next((m for m in msgs if m.message), msgs[0])
+        if not await self._claim(msgs[0].chat_id, ids[0]):
+            return  # shu xabar allaqachon (yoki ayni paytda) qayta ishlanmoqda
         async with Session() as s:
             known = (
                 await s.execute(select(SourcePost).where(SourcePost.chat_id == msgs[0].chat_id))
@@ -302,6 +326,15 @@ class Pipeline:
         files = [m for m in msgs if is_file(m)]
         if not fits(text, bool(files), self.premium):
             await self._fail(delivery_id, target, "Matn Telegram limitidan uzun (Premium kerak yoki qisqartirish)")
+            return False
+        # Yuborishni "band qilamiz": ikki marta bosilgan tugma yoki parallel chaqiruv ikkinchi nusxa chiqarmaydi
+        async with Session() as s:
+            claimed = await s.execute(
+                update(Delivery).where(Delivery.id == delivery_id, Delivery.status.notin_(("sent", "sending", "deleted")))
+                .values(status="sending")
+            )
+            await s.commit()
+        if claimed.rowcount == 0:
             return False
         try:
             if not files:

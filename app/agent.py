@@ -57,6 +57,7 @@ class Agent:
         self.client: TelegramClient | None = None
         self.pipeline: Pipeline | None = None
         self.status: dict = {"connected": False, "error": ""}
+        self._start_lock = asyncio.Lock()
         self._stats_task: asyncio.Task | None = None
         self._watch_task: asyncio.Task | None = None
         self._login: dict | None = None  # panel orqali kirish jarayoni
@@ -121,6 +122,12 @@ class Agent:
         await self.start(session)
 
     async def start(self, session: str) -> None:
+        # Ketma-ket bajariladi: parallel ikki chaqiruv bitta sessiyada ikkita mijoz qoldirmasin
+        # (ikkita mijoz har bir postni ikki martadan qabul qilardi)
+        async with self._start_lock:
+            await self._start(session)
+
+    async def _start(self, session: str) -> None:
         await self.stop()
         client = TelegramClient(StringSession(session), settings.api_id, settings.api_hash)
         try:

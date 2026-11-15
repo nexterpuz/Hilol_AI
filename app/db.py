@@ -88,6 +88,15 @@ class SourcePost(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class Seen(Base):
+    """Qayta ishlashga olingan manba xabar. Birlamchi kalit takrorni baza darajasida taqiqlaydi:
+    bitta xabar ikki marta (yoki ikki jarayonda) kelsa ham faqat bir marta ko'chiriladi."""
+
+    __tablename__ = "seen_messages"
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    msg_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+
+
 class Delivery(Base):
     """Xarita: manba post -> filial kanaldagi nusxa."""
 
