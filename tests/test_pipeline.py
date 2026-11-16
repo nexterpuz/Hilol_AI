@@ -105,7 +105,7 @@ async def scenario(monkeypatch):
     # faqat bitta filialga tegishli yangilik: yuborilmaydi, adminga xabar boradi
     store[3] = mk(3, "Toshkent filiali bugun ishlamaydi")
     await p.on_new([store[3]])
-    assert len(only(c.sent)) == 2 and any(m[0] == "ask" and m[2] for m in b.msgs if isinstance(m, tuple))
+    assert len(only(c.sent)) == 2  # boshqa (Toshkent) filialga tegishli: Qo'qon/Marg'ilon kanallariga chiqmaydi
     async with Session() as s:
         skipped = (await s.execute(select(Delivery).where(Delivery.status == "skipped", Delivery.target_id.in_(mine)))).scalars().first()
     assert await p.publish(skipped.id) and len(only(c.sent)) == 3  # admin "baribir yuborish"
@@ -158,13 +158,13 @@ async def scenario(monkeypatch):
         from app.db import Decision
 
         before = len(list((await s.execute(select(Decision))).scalars()))
-    store[7] = mk(7, "Toshkent filiali ertaga ishlamaydi")
+    store[7] = mk(7, "Toshkent kitob ko'rgazmasi ertaga boshlanadi")
     await p.on_new([store[7]])
     async with Session() as s:
         asked = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine), Delivery.status == "skipped").order_by(Delivery.id.desc()))).scalars().first()
     n, q = len(only(c.sent)), len(b.msgs)
     assert await p.approve(asked.id) and len(only(c.sent)) == n + 1
-    store[8] = mk(8, "Toshkent filiali ertaga ishlamaydi!")  # deyarli bir xil matn
+    store[8] = mk(8, "Toshkent kitob ko'rgazmasi ertaga boshlanadi!")  # deyarli bir xil matn
     await p.on_new([store[8]])
     async with Session() as s:
         last = list((await s.execute(select(Delivery).where(Delivery.target_id == asked.target_id).order_by(Delivery.id.desc()).limit(1))).scalars())[0]
@@ -176,7 +176,7 @@ async def scenario(monkeypatch):
         d8 = (await s.execute(select(Delivery).where(Delivery.target_id == other).order_by(Delivery.id.desc()))).scalars().first()
     await p.reject(d8.id)
     q = len(b.msgs)
-    store[9] = mk(9, "Toshkent filiali ertaga ishlamaydi")
+    store[9] = mk(9, "Toshkent kitob ko'rgazmasi ertaga boshlanadi")
     await p.on_new([store[9]])
     async with Session() as s:
         d9 = (await s.execute(select(Delivery).where(Delivery.target_id == other).order_by(Delivery.id.desc()))).scalars().first()
@@ -551,3 +551,38 @@ def test_agent_start_is_serialized(monkeypatch):
 
     asyncio.run(run())
     assert peak == 1 and sorted(order) == ["s1", "s2", "s3"]
+
+
+def test_branch_post_overrides_ai(monkeypatch):
+    """AI hammaga yuborsin desa ham, filialga xos e'lon faqat o'sha filialga chiqadi (haqiqiy post matni)."""
+    from types import SimpleNamespace as T
+
+    from app.pipeline import Pipeline
+
+    real = "✨ Бугун ва эртага Қўқондаги дўконимиз ишламайди\n\n⏺ Бошқа дўконларимиз одатдаги тартибда ишлайди.\n\n📍 Манзилларимиз\n\n@hilolnashr"
+
+    async def ai_says_everyone(text, targets, rules, examples=None):
+        return ai.Analysis(block_type="contact", cta_start_line=4,
+                           decisions=[ai.TargetDecision(target_id=t.id, send=True, confidence=0.95, reason="umumiy") for t in targets])
+
+    monkeypatch.setattr(ai, "analyze", ai_says_everyone)
+    store = {}
+    c = Client(store)
+
+    async def run():
+        from sqlalchemy import update
+
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            # nom o'zbekcha ʻ belgisi bilan, kalit so'zsiz
+            s.add_all([Target(name="Qoʻqon filiali", username="ov_qoqon"), Target(name="Margʻilon filiali", username="ov_marg"),
+                       Target(name="Farg'ona", username="ov_farg")])
+            await s.commit()
+        store[901] = mk(901, real)
+        await Pipeline(c, "manba", Bot(), premium=False).on_new([store[901]])
+
+    asyncio.run(run())
+    sent = [x for x in c.sent if x[0].startswith("ov_")]
+    assert [x[0] for x in sent] == ["ov_qoqon"]
+    assert "Қўқондаги дўконимиз ишламайди" in sent[0][1] and "Манзилларимиз" not in sent[0][1]

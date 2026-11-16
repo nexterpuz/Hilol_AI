@@ -39,6 +39,14 @@ STORE_WORDS = (
 HEAD_STORE = ("бош дўкон", "бош дукон", "bosh do'kon", "bosh do‘kon", "bosh dokon")
 
 
+APOSTROPHES = str.maketrans({c: "'" for c in "ʻʼ‘’`´"})
+
+
+def norm(text: str) -> str:
+    """Kichik harf va barcha apostrof turlari bitta "'" ga: Qoʻqon = Qo‘qon = Qo'qon."""
+    return (text or "").lower().translate(APOSTROPHES)
+
+
 def local_groups(body: str) -> tuple[set[int], bool]:
     """Postda qaysi shaharlarning do'koni tilga olingan va bosh do'kon tilga olinganmi.
 
@@ -46,7 +54,7 @@ def local_groups(body: str) -> tuple[set[int], bool]:
     tavsifidagi "Toshkent" yoki "Buxoro" kabi so'zlar noto'g'ri ishlab ketmasligi uchun.
     """
     groups, head = set(), False
-    for line in body.lower().split("\n"):
+    for line in norm(body).split("\n"):
         if any(h in line for h in HEAD_STORE):
             head = True
         if any(w in line for w in STORE_WORDS):
@@ -56,7 +64,7 @@ def local_groups(body: str) -> tuple[set[int], bool]:
 
 def target_groups(target) -> set[int]:
     """Filial kanali qaysi shahar(lar)ga tegishli: nomi va kalit so'zlari bo'yicha."""
-    own = f"{getattr(target, 'name', '') or ''}, {target.keywords or ''}".lower()
+    own = norm(f"{getattr(target, 'name', '') or ''}, {target.keywords or ''}")
     return {i for i, names in enumerate(CITY_GROUPS) if any(n in own for n in names)}
 
 
@@ -101,8 +109,8 @@ def analyze(text: str, targets: list) -> Analysis:
     base = 0.9 if block_type != "none" or len(text) < 300 else 0.5
 
     def mentioned(t) -> bool:
-        words = [w.strip().lower() for w in (t.keywords or "").split(",") if w.strip()]
-        return any(w in body for w in words)
+        words = [norm(w.strip()) for w in (t.keywords or "").split(",") if w.strip()]
+        return any(w in norm(body) for w in words)
 
     cities, head = local_groups(body)
     named = {t.id for t in targets if mentioned(t) or (cities & target_groups(t))}

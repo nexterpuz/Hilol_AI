@@ -224,6 +224,10 @@ class Pipeline:
             await self._log_ai_failure()
             analysis, by_rules = fallback.analyze(text, targets), True  # AI'siz zaxira qoidalar
 
+        # Filialga xos e'lon ("Қўқондаги дўконимиз ишламайди") qoidalar bilan aniq topiladi va
+        # AI qaroridan ustun turadi: bunday post faqat o'sha filialga chiqadi.
+        local_rules = fallback.analyze(text, targets) if text and not by_rules else None
+
         async with Session() as s:
             post = SourcePost(
                 chat_id=msgs[0].chat_id,
@@ -240,6 +244,10 @@ class Pipeline:
             plan = []
             for t in targets:
                 d = analysis.for_target(t.id) if analysis else None
+                if local_rules is not None:
+                    rd = local_rules.for_target(t.id)
+                    if rd is not None and rd.scope in ("own", "other"):
+                        d = rd
                 action, reason = decide(t.mode, d, settings.confidence_threshold)
                 if by_rules and t.mode != "manual":
                     reason = "AI'siz qoidalar: " + reason.replace("AI ishonchi past", "ishonch past")
