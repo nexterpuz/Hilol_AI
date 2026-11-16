@@ -177,6 +177,37 @@ class Pipeline:
 
     # ---------- yangi post ----------
 
+    async def catch_up(self, limit: int = 30, max_age_hours: int = 12) -> int:
+        """Agent o'chiq turgan paytda (masalan, yangilanish vaqtida) bosh kanalga tushgan postlarni qayta ishlaydi.
+
+        Faqat bazadagi oxirgi ma'lum postdan keyingi va yaqinda chiqqan xabarlar olinadi;
+        takrorga qarshi qulf tufayli allaqachon ko'chirilgan post ikkinchi marta chiqmaydi.
+        """
+        from datetime import timedelta
+
+        from telethon import utils
+
+        chat_id = getattr(self, "source_chat_id", None) or utils.get_peer_id(self.source)
+        async with Session() as s:
+            known = list((await s.execute(select(SourcePost).where(SourcePost.chat_id == chat_id))).scalars())
+        if not known:
+            return 0  # yangi ulangan manba: eski postlar ko'chirilmaydi
+        last = max(max(p.msg_ids) for p in known if p.msg_ids)
+        recent = await self.client.get_messages(self.source, limit=limit, min_id=last)
+        cutoff = now() - timedelta(hours=max_age_hours)
+        fresh = [m for m in recent if m and m.id > last and (getattr(m, "date", None) is None or m.date >= cutoff)]
+        groups: dict = {}
+        for m in sorted(fresh, key=lambda m: m.id):
+            groups.setdefault(m.grouped_id or f"single-{m.id}", []).append(m)
+        for msgs in groups.values():
+            try:
+                await self.on_new(msgs)
+            except Exception:
+                log.exception("catch_up")
+        if groups:
+            await db_log("catch_up", f"{len(groups)} ta o'tkazib yuborilgan post qayta ishlandi")
+        return len(groups)
+
     async def _claim(self, chat_id: int, msg_id: int) -> bool:
         """Xabarni qayta ishlashga "band qiladi". Faqat birinchi chaqiruv True oladi."""
         async with Session() as s:

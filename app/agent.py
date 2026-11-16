@@ -172,6 +172,7 @@ class Agent:
             self.notifier.pipeline = pipeline
         self._stats_task = asyncio.create_task(stats.run(client))
         self._watch_task = asyncio.create_task(self._watch(client))
+        asyncio.create_task(self._catch_up(pipeline))  # o'chiq turgan paytda tushgan postlar
         name = " ".join(x for x in (me.first_name, me.last_name) if x)
         self.status = {
             "connected": True, "error": "", "name": name, "username": me.username or "",
@@ -180,6 +181,14 @@ class Agent:
         }
         log.info("Akkaunt ulandi: %s (premium=%s); manba: %s", name, bool(me.premium), self.source_username)
         await db_log("account_started", name)
+
+    async def _catch_up(self, pipeline: Pipeline) -> None:
+        try:
+            n = await pipeline.catch_up()
+            if n and self.notifier:
+                await self.notifier.say(f"Agent o'chiq turgan paytda bosh kanalga {n} ta post tushgan ekan — ular hozir qayta ishlandi.")
+        except Exception:
+            log.exception("O'tkazib yuborilgan postlarni tekshirib bo'lmadi")
 
     async def stop(self) -> None:
         for task in (self._stats_task, self._watch_task):

@@ -21,8 +21,10 @@ class Client:
     def __init__(self, store):
         self.store, self.sent, self.edits, self.deleted, self.n = store, [], [], [], 500
 
-    async def get_messages(self, src, ids):
-        return [self.store.get(i) for i in ids]
+    async def get_messages(self, src, ids=None, limit=None, min_id=0):
+        if ids is not None:
+            return [self.store.get(i) for i in ids]
+        return [m for m in self.store.values() if m.id > min_id][: limit or 100]
 
     async def send_message(self, target, text, **k):
         self.n += 1
@@ -593,3 +595,48 @@ def test_branch_post_overrides_ai(monkeypatch):
     sent = [x for x in c.sent if x[0].startswith("ov_")]
     assert [x[0] for x in sent] == ["ov_qoqon"]
     assert "Қўқондаги дўконимиз ишламайди" in sent[0][1] and "Манзилларимиз" not in sent[0][1]
+
+
+def test_catch_up_after_downtime(monkeypatch):
+    """Agent o'chiq paytida tushgan postlar qayta ishga tushganda ko'chiriladi — bir martadan, eskilari emas."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    monkeypatch.setattr(ai, "analyze", fake_analyze)
+    chat, store = -100888, {}
+
+    def post(i, text, hours_ago=0.1, grouped=None):
+        m = mk(i, text, grouped=grouped, photo_id=i)
+        m.chat_id, m.date = chat, datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        store[i] = m
+        return m
+
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add(Target(name="CU", username="cu_1"))
+            await s.commit()
+        p = Pipeline(c, "manba", Bot(), premium=False)
+        p.source_chat_id = chat
+        first = await p.catch_up()  # bazada hali post yo'q: eski postlar ko'chirilmaydi
+        await p.on_new([post(10, "Birinchi post\n\n@hilolnashr")])
+        post(11, "O'chiq paytda tushgan post\n\n@hilolnashr")
+        post(12, "Albom boshi\n\n@hilolnashr", grouped=5)
+        post(13, "", grouped=5)
+        post(14, "Juda eski post\n\n@hilolnashr", hours_ago=40)
+        second = await p.catch_up()
+        third = await p.catch_up()  # takror chaqiruv hech narsa yubormaydi
+        return first, second, third
+
+    first, second, third = asyncio.run(run())
+    sent = [x for x in c.sent if x[0] == "cu_1"]
+    assert (first, second, third) == (0, 2, 0)
+    assert len(sent) == 3  # birinchi post + o'tkazib yuborilgan bitta post + bitta albom
+    assert any(isinstance(x[2], list) and len(x[2]) == 2 for x in sent)  # albom butunligicha
+    assert not any("Juda eski" in (x[1] if isinstance(x[1], str) else x[1][0]) for x in sent)
