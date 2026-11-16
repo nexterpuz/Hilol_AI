@@ -52,6 +52,9 @@ async def main() -> None:
     from .pipeline import reset_stuck
 
     await reset_stuck()
+    from .pipeline import load_admin_ids
+
+    await load_admin_ids()
     log.info("Baza: %s", settings.database_url.split("://")[0])
     if EPHEMERAL_DB:
         log.error("DATABASE_URL o'rnatilmagan: vaqtinchalik SQLite ishlatilmoqda, har bir deployda barcha ma'lumot o'chadi!")

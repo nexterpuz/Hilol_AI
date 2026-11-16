@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block main %}
 <h1>Telegram akkaunt</h1>
+{% if saved %}<div class="note ok" role="status">{{ saved }}</div>{% endif %}
 {% if error %}<div class="note danger" role="alert">{{ error }}</div>{% endif %}
 {% for p in problems %}<div class="note warn" role="alert">{{ p }}</div>{% endfor %}
 <section class="card">
@@ -18,6 +19,16 @@
 {% if status.starting %}<meta http-equiv="refresh" content="5">{% endif %}
 <div class="note warn">{{ status.error or "Telegram akkaunt ulanmagan." }}</div>
 {% endif %}
+</section>
+<section class="card">
+<h2>Botning bosh adminlari</h2>
+<div class="muted">Tasdiq so'rovlari, hisobotlar va boshqaruv tugmalari botda shu Telegram akkauntlarga beriladi. Bu agent akkauntidan alohida sozlama: agent akkauntini almashtirish bot adminini o'zgartirmaydi.</div>
+<form method="post" action="/account/admins">
+<label for="admins">Telegram ID raqamlari (vergul bilan)</label>
+<div class="row"><input id="admins" name="ids" type="text" inputmode="numeric" required value="{{ admin_ids }}" placeholder="123456789, 987654321" style="flex:1 1 240px">
+<button class="btn primary" type="submit">Saqlash</button></div>
+</form>
+<div class="muted">{% if status.connected and status.id %}Joriy agent akkauntining ID raqami: <strong>{{ status.id }}</strong> — uni admin qilish uchun yuqoridagi maydonga qo'shing. {% endif %}Boshqa akkauntning ID raqamini bilish uchun o'sha akkauntdan Telegram'da @userinfobot ga yozing. Saqlangach, yangi admin botga bir marta /start bosishi kerak.</div>
 </section>
 <section class="card">
 <h2>{{ "Akkauntni almashtirish" if status.connected else "Akkauntga kirish" }}</h2>

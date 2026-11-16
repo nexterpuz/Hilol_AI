@@ -177,7 +177,7 @@ class Agent:
         self.status = {
             "connected": True, "error": "", "name": name, "username": me.username or "",
             "phone": "+" + me.phone[:5] + "…" + me.phone[-2:] if me.phone else "",
-            "premium": bool(me.premium), "source": self.source_username,
+            "id": me.id, "premium": bool(me.premium), "source": self.source_username,
         }
         log.info("Akkaunt ulandi: %s (premium=%s); manba: %s", name, bool(me.premium), self.source_username)
         await db_log("account_started", name)

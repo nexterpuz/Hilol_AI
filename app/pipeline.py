@@ -76,6 +76,33 @@ async def reset_stuck() -> None:
         await s.commit()
 
 
+def parse_ids(raw: str) -> list[int]:
+    """Vergul yoki bo'sh joy bilan ajratilgan Telegram ID raqamlari."""
+    return list(dict.fromkeys(int(x) for x in re.split(r"[\s,;]+", raw or "") if x.isdigit()))
+
+
+async def load_admin_ids() -> None:
+    """Paneldan saqlangan bosh adminlar ro'yxati bo'lsa, muhit o'zgaruvchisidagi (ADMIN_IDS) o'rniga shuni oladi."""
+    async with Session() as s:
+        row = await s.get(Setting, "admin_ids")
+    ids = parse_ids(row.value) if row else []
+    if ids:
+        settings.admin_ids[:] = ids
+
+
+async def save_admin_ids(ids: list[int]) -> None:
+    async with Session() as s:
+        row = await s.get(Setting, "admin_ids")
+        value = ", ".join(str(i) for i in ids)
+        if row is not None:
+            row.value = value
+        else:
+            s.add(Setting(key="admin_ids", value=value))
+        await s.commit()
+    settings.admin_ids[:] = ids  # ro'yxat joyida yangilanadi: bot darhol yangi adminlarni taniydi
+    await db_log("admins_changed", value)
+
+
 async def is_paused() -> bool:
     async with Session() as s:
         row = await s.get(Setting, "paused")

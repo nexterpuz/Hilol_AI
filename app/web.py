@@ -16,7 +16,7 @@ from sqlalchemy import delete, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import EPHEMERAL_DB, settings
-from .pipeline import is_paused, phone_keys, preview_text, set_paused
+from .pipeline import is_paused, parse_ids, phone_keys, preview_text, save_admin_ids, set_paused
 from .db import Decision, Delivery, Event, Setting, Rule, Session, SourcePost, StatChannel, StatPost, Subscriber, Target, now
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -88,7 +88,7 @@ EVENT_LABELS = {
     "new_post": "Yangi post", "sent": "Yuborildi", "failed": "Xatolik", "edited": "Tahrir sinxronlandi",
     "deleted": "O'chirish sinxronlandi", "account_started": "Akkaunt ulandi", "account_lost": "Akkaunt uzildi",
     "source_changed": "Manba o'zgartirildi", "ai_failed": "AI ishlamadi (zaxira qoidalar)",
-    "report_sent": "Hisobot yuborildi", "rating_sent": "Reyting yuborildi", "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi", "resend": "Qo'lda yuborildi", "catch_up": "O'tkazib yuborilgan postlar",
+    "report_sent": "Hisobot yuborildi", "rating_sent": "Reyting yuborildi", "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi", "resend": "Qo'lda yuborildi", "catch_up": "O'tkazib yuborilgan postlar", "admins_changed": "Bot adminlari o'zgartirildi",
 }
 
 
@@ -615,6 +615,8 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             request, "account.html", status=agent.status, step=agent.login_step,
             error=request.session.pop("warning", "") or agent.login_error,
             problems=request.session.pop("problems", []), hint=agent.login_hint, qr_svg=agent.qr_svg(),
+            saved=request.session.pop("saved", ""),
+            admin_ids=", ".join(str(i) for i in settings.admin_ids),
         )
 
     @app.post("/account/qr")
@@ -622,6 +624,19 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         error = await agent.begin_qr()
         if error:
             request.session["warning"] = error
+        return _go("/account")
+
+    @app.post("/account/admins")
+    async def account_admins(request: Request, ids: str = Form("")):
+        parsed = parse_ids(ids)
+        if not parsed:
+            request.session["warning"] = "Kamida bitta Telegram ID kiriting (faqat raqamlar)."
+            return _go("/account")
+        await save_admin_ids(parsed)
+        note = "Bot bosh adminlari saqlandi. Yangi admin botga bir marta /start bosishi kerak."
+        if not getattr(agent, "notifier", None):
+            note += " Bot hozir ishlamayapti: TG_BOT_TOKEN ni tekshiring yoki xizmatni qayta ishga tushiring."
+        request.session["saved"] = note
         return _go("/account")
 
     @app.post("/account/phone")

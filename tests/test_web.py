@@ -415,3 +415,30 @@ def test_branch_wait_hidden_from_admin_queue():
 
     n = asyncio.run(count())
     assert f'<span class="badge">{n}</span>' in q if n else 'Tasdiq navbati</span><span class="badge">' not in q
+
+
+def test_change_bot_admins_from_panel():
+    """Bosh adminlar paneldan o'zgartiriladi va bot darhol yangi ro'yxatni ishlatadi."""
+    from app.config import settings
+    from app.pipeline import load_admin_ids, parse_ids, save_admin_ids
+
+    assert parse_ids("123, 456;789  123 abc") == [123, 456, 789]
+    before = list(settings.admin_ids)
+    same_list = settings.admin_ids
+    agent = FakeAgent(FakePipeline())
+    agent.status = {"connected": True, "error": "", "name": "Hilol SMM", "username": "hilolsmm", "phone": "+99895…84", "premium": True, "source": "HilolNashr", "id": 5550001}
+    c = TestClient(create_app(agent), follow_redirects=False)
+    c.post("/login", data={"username": "admin", "password": "sinov-parol"})
+    try:
+        page = c.get("/account").text
+        assert "Botning bosh adminlari" in page and "5550001" in page and 'value="777"' in page
+        c.post("/account/admins", data={"ids": "abc"})
+        assert "Kamida bitta" in c.get("/account").text and settings.admin_ids == before
+        c.post("/account/admins", data={"ids": "777, 5550001"})
+        assert settings.admin_ids == [777, 5550001] and settings.admin_ids is same_list  # joyida yangilandi
+        assert 'value="777, 5550001"' in c.get("/account").text
+        settings.admin_ids[:] = [1]
+        asyncio.run(load_admin_ids())  # qayta ishga tushganda bazadan o'qiladi
+        assert settings.admin_ids == [777, 5550001]
+    finally:
+        asyncio.run(save_admin_ids(before))
