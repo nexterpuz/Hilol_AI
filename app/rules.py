@@ -68,6 +68,14 @@ def target_groups(target) -> set[int]:
     return {i for i, names in enumerate(CITY_GROUPS) if any(n in own for n in names)}
 
 
+DISCOUNT_WORDS = ("чегирма", "chegirma", "скидка", "skidka", "аксия", "акция", "aksiya", "arzonlashtirish", "арзонлаштириш")
+
+
+def is_discount(text: str) -> bool:
+    low = norm(text)
+    return any(w in low for w in DISCOUNT_WORDS)
+
+
 def _kind(line: str) -> str | None:
     """Qator turi: 'blank', 'mention' (faqat @username), 'contact' yoki None (oddiy mazmun)."""
     stripped = line.strip()
@@ -106,7 +114,7 @@ def analyze(text: str, targets: list) -> Analysis:
     block_type, start = find_block(text)
     body = "\n".join(text.split("\n")[:start] if start else text.split("\n")).lower()
     # Qolipga mos post — ishonchli; uzun, lekin aloqa bloki ham, imzosi ham yo'q post — shubhali
-    base = 0.9 if block_type != "none" or len(text) < 300 else 0.5
+    base = 0.9 if block_type != "none" or len(text) < 300 or is_discount(text) else 0.5
 
     def mentioned(t) -> bool:
         words = [norm(w.strip()) for w in (t.keywords or "").split(",") if w.strip()]
@@ -125,5 +133,5 @@ def analyze(text: str, targets: list) -> Analysis:
             # Boshqa filialning e'loni: bu kanalga chiqmaydi va so'ralmaydi
             decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.9, reason="Post boshqa filialga tegishli", scope="other"))
         else:
-            decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.6, reason="Post bosh do'konga tegishli"))
+            decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.6, reason="Post bosh do'konga tegishli", scope="head"))
     return Analysis(block_type=block_type, cta_start_line=start, decisions=decisions)

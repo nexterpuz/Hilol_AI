@@ -49,7 +49,7 @@ class TargetDecision(BaseModel):
     confidence: float = Field(description="0 dan 1 gacha")
     reason: str
     # general — umumiy post; own — aynan shu filialga tegishli; other — boshqa filialga tegishli
-    scope: Literal["general", "own", "other"] = "general"
+    scope: Literal["general", "own", "other", "head"] = "general"
 
 
 class Analysis(BaseModel):

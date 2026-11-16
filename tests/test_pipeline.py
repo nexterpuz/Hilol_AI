@@ -398,7 +398,7 @@ def test_rules_real_post_shapes():
     # bosh do'kondagi tadbir: hech bir filialga avtomatik chiqmaydi
     event = "Марҳамат, навбатдаги илм мажлисига ташриф буюринг! 😊\n\n📆 17 ноябрь 14:00\n\n📍 «Hilol-Nashr» бош дўкони\n\n@hilolnashr"
     c = fallback.analyze(event, targets)
-    assert all(not d.send and d.confidence < 0.8 and d.scope == "general" for d in c.decisions)
+    assert all(not d.send and d.confidence < 0.8 and d.scope == "head" for d in c.decisions)
     # kitob tavsifidagi shahar nomi va umumiy "do'konlarimizdan" so'zi — oddiy sotuv posti
     sale = "🔥 Имом Бухорий ҳазратларининг ҳаёти ҳақидаги асар. Муаллиф Тошкентда яшаган.\n📚 Китобни дўконларимиздан сотиб олинг.\n👉 Нархи: 43 000 сўм\n\n📍 Манзилларимиз\n📞 +998712175999\n@hilolnashr"
     d = fallback.analyze(sale, targets)
@@ -645,3 +645,53 @@ def test_catch_up_after_downtime(monkeypatch):
     assert len(sent) == 3  # birinchi post + o'tkazib yuborilgan bitta post + bitta albom
     assert any(isinstance(x[2], list) and len(x[2]) == 2 for x in sent)  # albom butunligicha
     assert not any(w in (x[1] if isinstance(x[1], str) else x[1][0]) for x in sent for w in ("Juda eski", "oldingi eski"))
+
+
+def test_head_store_post_goes_to_managers_and_discounts_publish(monkeypatch):
+    """Bosh do'kon posti: menejeri bor filialda menejerdan, yo'q filialda admindan so'raladi.
+    Chegirma e'loni bitta do'konga tegishli bo'lmasa — so'ramasdan hammaga."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    async def no_ai(text, targets, rules, examples=None):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    event = ("#устозлар_билан_мутолаа\n\n✨ «Тафсири Ҳилол» китоби ҳақидаги суҳбатга ташриф буюринг!\n\n"
+             "📆 Тадбир эртага 14:00 да бошланади.\n\n📍 «Hilol-Nashr» бош дўкони\n\n@hilolnashr")
+    sale = ("🔥 Барча китобларга 20% чегирма! " + "Ажойиб имконият, улгуриб қолинг. " * 12 + "\n\n@hilolnashr")
+    local_sale = "🔥 Қўқондаги дўконимизда 20% чегирма\n\n@hilolnashr"
+    store, bot = {}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([Target(name="Qo'qon H", username="hd_qoqon", manager_ids={"7101": "1"}),
+                       Target(name="Andijon H", username="hd_andijon")])
+            await s.commit()
+        p = Pipeline(c, "manba", bot, premium=False)
+        for i, text in ((951, event), (952, sale), (953, local_sale)):
+            store[i] = mk(i, text)
+            await p.on_new([store[i]])
+        async with Session() as s:
+            rows = list((await s.execute(select(Delivery).order_by(Delivery.id.desc()).limit(6))).scalars())
+            names = {t.id: t.username for t in (await s.execute(select(Target))).scalars()}
+        return {(names[d.target_id], d.post_id): d for d in rows}
+
+    ds = asyncio.run(run())
+    by = {}
+    for (name, pid), d in ds.items():
+        by.setdefault(pid, {})[name] = d
+    ev, sl, ls = (by[k] for k in sorted(by))
+    # tadbir: Qo'qon menejeridan so'raldi (admin navbatida ko'rinmaydi), Andijon (menejersiz) — admindan
+    assert ev["hd_qoqon"].status == "pending" and ev["hd_qoqon"].reason == "Filial tasdig'i kutilmoqda"
+    assert ("branch", ev["hd_qoqon"].id, "hd_qoqon") in bot.msgs
+    assert ev["hd_andijon"].status == "pending" and ("ask", ev["hd_andijon"].id, False) in bot.msgs
+    # umumiy chegirma: ikkalasiga so'ramasdan
+    assert sl["hd_qoqon"].status == "sent" and sl["hd_andijon"].status == "sent"
+    # bitta do'kondagi chegirma: faqat o'sha filialga
+    assert ls["hd_qoqon"].status == "sent" and ls["hd_andijon"].status == "skipped"
+    assert [x[0] for x in c.sent].count("hd_andijon") == 1

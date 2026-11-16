@@ -313,7 +313,7 @@ class Pipeline:
                 d = analysis.for_target(t.id) if analysis else None
                 if local_rules is not None:
                     rd = local_rules.for_target(t.id)
-                    if rd is not None and rd.scope in ("own", "other"):
+                    if rd is not None and rd.scope in ("own", "other", "head"):
                         d = rd
                 action, reason = decide(t.mode, d, settings.confidence_threshold)
                 if by_rules and t.mode != "manual":
@@ -321,6 +321,9 @@ class Pipeline:
                 word = ask_word_in(text, ask_words)
                 if word and action == "send" and t.mode != "manual":
                     action, reason = "ask", f"Matnda «{word}» so'zi bor: tasdiq kerak"
+                if not word and action == "ask" and fallback.is_discount(text) and (d is None or d.scope == "general"):
+                    # Chegirma e'loni bitta do'konga tegishli bo'lmasa — barcha filiallarga so'ramasdan
+                    action, reason = "send", "Chegirma e'loni"
                 quiet = False
                 past = next((m for m in memory if m.target_id == t.id and similar(m.text, text)), None)
                 if past is not None and t.mode != "manual":
@@ -332,6 +335,9 @@ class Pipeline:
                     # Boshqa filialning e'loni: bu kanalga chiqmaydi va hech kimdan so'ralmaydi.
                     # (O'z filialiga tegishli post — scope "own" — odatdagidek avtomatik chiqadi.)
                     action, reason, quiet = "skip", "Post boshqa filialga tegishli", True
+                elif scope == "head" and t.mode != "manual" and t.manager_ids:
+                    # Bosh do'kon tadbiri/e'loni: filial kanaliga joylashni filial menejeri hal qiladi
+                    action, reason, quiet, branch, local = "ask", "Filial tasdig'i kutilmoqda", False, True, "head"
                 elif t.branch_approval and action == "send" and ask_word_in(text, branch_words):
                     # Yangi nashr yoki "tez kunda": kitob filialga kelgach, menejer o'zi tasdiqlaydi
                     action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True
