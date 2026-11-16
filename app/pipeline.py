@@ -217,9 +217,18 @@ class Pipeline:
         chat_id = getattr(self, "source_chat_id", None) or utils.get_peer_id(self.source)
         async with Session() as s:
             known = list((await s.execute(select(SourcePost).where(SourcePost.chat_id == chat_id))).scalars())
-        if not known:
-            return 0  # yangi ulangan manba: eski postlar ko'chirilmaydi
-        last = max(max(p.msg_ids) for p in known if p.msg_ids)
+        key = f"baseline:{chat_id}"
+        async with Session() as s:
+            row = await s.get(Setting, key)
+        baseline = int(row.value) if row and row.value.isdigit() else None
+        if not known and baseline is None:
+            # Yangi ulangan manba: hozirgi oxirgi post "boshlang'ich nuqta" bo'ladi, eski postlar ko'chirilmaydi
+            newest = await self.client.get_messages(self.source, limit=1)
+            async with Session() as s:
+                s.add(Setting(key=key, value=str(newest[0].id if newest else 0)))
+                await s.commit()
+            return 0
+        last = max([baseline or 0] + [max(p.msg_ids) for p in known if p.msg_ids])
         recent = await self.client.get_messages(self.source, limit=limit, min_id=last)
         cutoff = now() - timedelta(hours=max_age_hours)
         fresh = [m for m in recent if m and m.id > last and (getattr(m, "date", None) is None or m.date >= cutoff)]

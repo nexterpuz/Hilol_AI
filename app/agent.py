@@ -173,6 +173,7 @@ class Agent:
         self._stats_task = asyncio.create_task(stats.run(client))
         self._watch_task = asyncio.create_task(self._watch(client))
         asyncio.create_task(self._catch_up(pipeline))  # o'chiq turgan paytda tushgan postlar
+        self._poll_task = asyncio.create_task(self._poll(pipeline))
         name = " ".join(x for x in (me.first_name, me.last_name) if x)
         self.status = {
             "connected": True, "error": "", "name": name, "username": me.username or "",
@@ -189,12 +190,38 @@ class Agent:
                 await self.notifier.say(f"Agent o'chiq turgan paytda bosh kanalga {n} ta post tushgan ekan — ular hozir qayta ishlandi.")
         except Exception:
             log.exception("O'tkazib yuborilgan postlarni tekshirib bo'lmadi")
+        # Akkaunt huquqlarini tekshirish: muammo bo'lsa bosh adminga aytiladi
+        try:
+            problems = await self.check_targets()
+            if getattr(pipeline.source, "left", False):
+                problems.insert(0, f"Agent akkaunti @{self.source_username} kanaliga obuna emas. Postlar baribir har daqiqada tekshiriladi, lekin tahrir va o'chirish sinxronlanmaydi — obuna bo'ling.")
+            if problems:
+                self.status["problems"] = problems
+                if self.notifier:
+                    await self.notifier.say("Agent akkauntida muammo bor:\n\n" + "\n".join("• " + p for p in problems))
+        except Exception:
+            log.exception("Huquqlarni tekshirib bo'lmadi")
+
+    async def _poll(self, pipeline: Pipeline) -> None:
+        """Har daqiqada bosh kanalni o'zi tekshiradi.
+
+        Telegram yangi post haqida xabar bermasa ham (akkaunt kanalga obuna emas, ulanish
+        uzilgan va h.k.) post ko'chiriladi. Takrorga qarshi qulf tufayli ikki marta chiqmaydi.
+        """
+        while True:
+            await asyncio.sleep(60)
+            try:
+                await pipeline.catch_up()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.warning("Bosh kanalni tekshirib bo'lmadi, keyinroq urinib ko'riladi", exc_info=True)
 
     async def stop(self) -> None:
-        for task in (self._stats_task, self._watch_task):
+        for task in (self._stats_task, self._watch_task, getattr(self, "_poll_task", None)):
             if task and task is not asyncio.current_task():
                 task.cancel()
-        self._stats_task = self._watch_task = None
+        self._stats_task = self._watch_task = self._poll_task = None
         if self.client:
             await self.client.disconnect()
         self.client = self.pipeline = None

@@ -4,6 +4,7 @@
 {% if saved %}<div class="note ok" role="status">{{ saved }}</div>{% endif %}
 {% if error %}<div class="note danger" role="alert">{{ error }}</div>{% endif %}
 {% for p in problems %}<div class="note warn" role="alert">{{ p }}</div>{% endfor %}
+{% for p in status.problems or [] %}<div class="note warn" role="alert">{{ p }}</div>{% endfor %}
 <section class="card">
 <h2>Joriy akkaunt</h2>
 {% if status.connected %}

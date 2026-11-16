@@ -24,7 +24,8 @@ class Client:
     async def get_messages(self, src, ids=None, limit=None, min_id=0):
         if ids is not None:
             return [self.store.get(i) for i in ids]
-        return [m for m in self.store.values() if m.id > min_id][: limit or 100]
+        found = sorted((m for m in self.store.values() if m.id > min_id), key=lambda m: -m.id)
+        return found[: limit or 100]
 
     async def send_message(self, target, text, **k):
         self.n += 1
@@ -624,8 +625,12 @@ def test_catch_up_after_downtime(monkeypatch):
             await s.commit()
         p = Pipeline(c, "manba", Bot(), premium=False)
         p.source_chat_id = chat
-        first = await p.catch_up()  # bazada hali post yo'q: eski postlar ko'chirilmaydi
-        await p.on_new([post(10, "Birinchi post\n\n@hilolnashr")])
+        post(9, "Agent ulanishidan oldingi eski post\n\n@hilolnashr")
+        first = await p.catch_up()  # yangi manba: boshlang'ich nuqta belgilanadi, eski post ko'chirilmaydi
+        # Telegram xabar bermagan (akkaunt obuna emas) post ham keyingi tekshiruvda ko'chiriladi
+        post(10, "Birinchi post\n\n@hilolnashr")
+        polled = await p.catch_up()
+        assert polled == 1
         post(11, "O'chiq paytda tushgan post\n\n@hilolnashr")
         post(12, "Albom boshi\n\n@hilolnashr", grouped=5)
         post(13, "", grouped=5)
@@ -639,4 +644,4 @@ def test_catch_up_after_downtime(monkeypatch):
     assert (first, second, third) == (0, 2, 0)
     assert len(sent) == 3  # birinchi post + o'tkazib yuborilgan bitta post + bitta albom
     assert any(isinstance(x[2], list) and len(x[2]) == 2 for x in sent)  # albom butunligicha
-    assert not any("Juda eski" in (x[1] if isinstance(x[1], str) else x[1][0]) for x in sent)
+    assert not any(w in (x[1] if isinstance(x[1], str) else x[1][0]) for x in sent for w in ("Juda eski", "oldingi eski"))
