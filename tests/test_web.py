@@ -384,3 +384,34 @@ def test_period_start_today():
     assert start.hour == 0 and start.minute == 0 and start.date() == now().astimezone(TASHKENT).date()
     assert timedelta(0) <= now() - period_start(0) < timedelta(days=1)
     assert period_start(7) < now() - timedelta(days=6)
+
+
+def test_branch_wait_hidden_from_admin_queue():
+    """Filial tasdig'ini kutayotgan post admin navbatida va menyu belgisida sanalmaydi, alohida bo'limda turadi."""
+    async def seed():
+        await init_db()
+        async with Session() as s:
+            t = Target(name="BW", username="bw_1")
+            post = SourcePost(chat_id=-66, msg_ids=[1], text="Yangi kitob nashr qilindi BW-9911")
+            s.add_all([t, post])
+            await s.flush()
+            s.add(Delivery(post_id=post.id, target_id=t.id, status="pending", reason="Filial tasdig'i kutilmoqda"))
+            await s.commit()
+
+    asyncio.run(seed())
+    c = TestClient(create_app(FakeAgent(FakePipeline())), follow_redirects=False)
+    c.post("/login", data={"username": "admin", "password": "sinov-parol"})
+    q = c.get("/queue").text
+    main_part, _, branch_part = q.partition("Filial menejerlari tasdig'ini kutayotgan postlar")
+    assert "BW-9911" not in main_part and "BW-9911" in branch_part
+
+    async def count():
+        from sqlalchemy import select
+
+        from app.web import BRANCH_WAIT
+
+        async with Session() as s:
+            return len(list((await s.execute(select(Delivery.id).where(Delivery.status == "pending", Delivery.reason != BRANCH_WAIT))).scalars()))
+
+    n = asyncio.run(count())
+    assert f'<span class="badge">{n}</span>' in q if n else 'Tasdiq navbati</span><span class="badge">' not in q

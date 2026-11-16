@@ -159,12 +159,14 @@ class AdminBot:
         body = f"Yangi post — {target.name}\n{intro}\n\nKanalda shunday chiqadi:\n\n{preview(text)}"
         buttons = [Button.inline("Kanalga joylash", data=f"ok:{delivery_id}"), Button.inline("Rad etish", data=f"no:{delivery_id}")]
         managers = list((target.manager_ids or {}).keys())
-        if not managers or not await self.send(managers, body, buttons):
-            # Menejer botga /start bosmagan yoki botni bloklagan: post kanalga o'zi chiqmaydi, bosh admin hal qiladi
-            await self.say(
-                f"Filial menejeri botga bog'lanmagan — {target.name}\nSabab: {why}\n\nKanalda shunday chiqadi:\n\n{preview(text)}",
-                self._buttons(delivery_id),
-            )
+        if managers and await self.send(managers, body, buttons):
+            return  # menejerga yetdi: bosh adminga hech narsa yuborilmaydi
+        # Menejer botga bog'lanmagan yoki botni bloklagan: post hech kimga yetmay qolmasligi uchun
+        # bosh adminga tugmasiz qisqa ogohlantirish (post paneldagi alohida bo'limda turadi)
+        await self.say(
+            f"Diqqat: {target.name} uchun post filial tasdig'ini kutyapti, lekin menejer botga bog'lanmagan "
+            "(yoki botni bloklagan). «👥 Menejerlar» tugmasidan holatni ko'ring."
+        )
 
     async def _report_choice(self, event, kind: str) -> None:
         """Tanlangan davr bo'yicha hisobotni shu foydalanuvchiga yuboradi (admin — umumiy, menejer — o'z filiali)."""

@@ -2,7 +2,7 @@
 {% block main %}
 <h1>Tasdiq navbati</h1>
 {% if warning %}<div class="note warn" role="alert">{{ warning }}</div>{% endif %}
-{% for i in items %}
+{% macro card(i) %}
 <section class="card">
 <div class="row between">
 <h2>{{ i.target.name if i.target else "(kanal o'chirilgan)" }}</h2>
@@ -37,7 +37,18 @@
 <form method="post" action="/queue/{{ i.d.id }}/reject"><button class="btn" type="submit">Rad etish</button></form>
 </div>
 </section>
+{% endmacro %}
+{% for i in items %}{{ card(i) }}
 {% else %}
 <section class="card"><div class="muted">Navbat bo'sh.</div></section>
 {% endfor %}
+{% if branch %}
+<details>
+<summary style="cursor:pointer;min-height:44px;display:flex;align-items:center;gap:8px"><strong>Filial menejerlari tasdig'ini kutayotgan postlar ({{ branch|length }})</strong></summary>
+<div class="muted" style="margin-bottom:12px">Bu postlar sizdan tasdiq talab qilmaydi: har birini o'z filiali menejeri botda «Kanalga joylash» orqali chiqaradi. Zarur bo'lsa, shu yerdan o'zingiz ham yuborishingiz mumkin.</div>
+<div style="display:flex;flex-direction:column;gap:20px">
+{% for i in branch %}{{ card(i) }}{% endfor %}
+</div>
+</details>
+{% endif %}
 {% endblock %}

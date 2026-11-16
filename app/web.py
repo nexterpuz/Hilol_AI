@@ -33,7 +33,7 @@ async def dashboard_data(days: int) -> dict:
         targets = list((await s.execute(select(Target).order_by(Target.id))).scalars())
         chan = list((await s.execute(select(StatChannel).where(StatChannel.at >= since).order_by(StatChannel.at))).scalars())
         sent = list((await s.execute(select(Delivery).where(Delivery.status == "sent", Delivery.sent_at >= since))).scalars())
-        pending = len(list((await s.execute(select(Delivery.id).where(Delivery.status == "pending"))).scalars()))
+        pending = len(list((await s.execute(select(Delivery.id).where(Delivery.status == "pending", Delivery.reason != BRANCH_WAIT))).scalars()))
         ids = [d.id for d in sent]
         posts = list((await s.execute(select(StatPost).where(StatPost.delivery_id.in_(ids)).order_by(StatPost.at))).scalars()) if ids else []
         events = list((await s.execute(select(Event).where(Event.created_at >= since))).scalars())
@@ -151,6 +151,8 @@ async def posts_data(days: int) -> dict:
     ranked = sorted((r for r in rows if r["reach"] is not None), key=lambda r: r["reach"], reverse=True)
     return {"rows": rows, "best": ranked[:3], "worst": ranked[-3:][::-1] if len(ranked) > 3 else []}
 
+
+BRANCH_WAIT = "Filial tasdig'i kutilmoqda"  # bunday postlar adminni emas, filial menejerini kutadi
 
 WEEKDAYS = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"]
 
@@ -319,7 +321,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
 
     async def pending_count() -> int:
         async with Session() as s:
-            return len(list((await s.execute(select(Delivery.id).where(Delivery.status == "pending"))).scalars()))
+            return len(list((await s.execute(select(Delivery.id).where(Delivery.status == "pending", Delivery.reason != BRANCH_WAIT))).scalars()))
 
     def page(request: Request, name: str, **ctx):
         connected = bool(agent and agent.status.get("connected"))
@@ -575,7 +577,9 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                     "preview": (preview_text(post, target, d) if target else "") or "(matnsiz post)",
                     "lines": lines, "cut": cut, "closing": d.closing or post.block_type or "contact",
                 })
-        return page(request, "queue.html", items=items, warning=request.session.pop("warning", ""))
+        mine = [i for i in items if i["d"].reason != BRANCH_WAIT]
+        branch = [i for i in items if i["d"].reason == BRANCH_WAIT]
+        return page(request, "queue.html", items=mine, branch=branch, warning=request.session.pop("warning", ""))
 
     @app.post("/queue/{delivery_id}/adjust")
     async def queue_adjust(delivery_id: int, cut_line: int = Form(-1), closing: str = Form("contact")):
