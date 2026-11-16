@@ -88,7 +88,7 @@ EVENT_LABELS = {
     "new_post": "Yangi post", "sent": "Yuborildi", "failed": "Xatolik", "edited": "Tahrir sinxronlandi",
     "deleted": "O'chirish sinxronlandi", "account_started": "Akkaunt ulandi", "account_lost": "Akkaunt uzildi",
     "source_changed": "Manba o'zgartirildi", "ai_failed": "AI ishlamadi (zaxira qoidalar)",
-    "report_sent": "Hisobot yuborildi", "rating_sent": "Reyting yuborildi", "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi",
+    "report_sent": "Hisobot yuborildi", "rating_sent": "Reyting yuborildi", "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi", "resend": "Qo'lda yuborildi",
 }
 
 
@@ -369,6 +369,21 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             await agent.notifier.say("Favqulodda to'xtatish yoqildi (paneldan)." if state == "on" else "Agent davom ettirildi (paneldan).")
         return _go(request.headers.get("referer") or "/")
 
+    @app.post("/posts/{post_id}/resend")
+    async def post_resend(request: Request, post_id: int, target_id: int = Form(0)):
+        if agent is None or agent.pipeline is None:
+            request.session["warning"] = "Telegram akkaunt ulanmagan — postni yuborib bo'lmaydi."
+            return _go("/posts")
+        async with Session() as s:
+            target = await s.get(Target, target_id)
+        if target is None:
+            request.session["warning"] = "Kanal tanlanmagan."
+        elif await agent.pipeline.resend(post_id, target_id):
+            request.session["saved"] = f"Post {target.name} kanaliga yuborildi."
+        else:
+            request.session["warning"] = f"Post {target.name} kanaliga yuborilmadi — Jurnal sahifasida sababini ko'ring."
+        return _go("/posts")
+
     @app.post("/posts/{post_id}/recall")
     async def post_recall(request: Request, post_id: int):
         if agent is None or agent.pipeline is None:
@@ -415,8 +430,10 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
     @app.get("/posts")
     async def posts(request: Request, days: int = 30):
         days = days if days in (7, 30, 90) else 30
+        async with Session() as s:
+            targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
         return page(
-            request, "posts.html", days=days, saved=request.session.pop("saved", ""),
+            request, "posts.html", days=days, targets=targets, saved=request.session.pop("saved", ""),
             warning=request.session.pop("warning", ""), **(await posts_data(days)),
         )
 

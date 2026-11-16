@@ -293,6 +293,13 @@ async def scenario(monkeypatch):
     await p.on_new([store[13]])
     assert len(only(c.sent)) == n + 2  # tabrik posti tasdiqsiz ikkala filialga
 
+    # qo'lda qayta yuborish: "yuborilgan" yoki o'tkazib yuborilgan nusxa ham tanlangan kanalga chiqadi
+    async with Session() as s:
+        skipped_any = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine), Delivery.status == "skipped"))).scalars().first()
+    n = len(only(c.sent))
+    assert await p.resend(skipped_any.post_id, skipped_any.target_id) and len(only(c.sent)) == n + 1
+    assert await p.resend(skipped_any.post_id, skipped_any.target_id) and len(only(c.sent)) == n + 2  # ataylab ikkinchi marta
+
     # postni qaytarib olish: filiallardan o'chadi
     async with Session() as s:
         post12 = d12.post_id

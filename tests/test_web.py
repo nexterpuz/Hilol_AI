@@ -70,6 +70,10 @@ class FakePipeline:
     async def adjust(self, delivery_id, cut_line, closing):
         self.published.append(("adjust", delivery_id, cut_line, closing))
 
+    async def resend(self, post_id, target_id):
+        self.published.append(("resend", post_id, target_id))
+        return True
+
     async def recall(self, post_id):
         self.published.append(("recall", post_id))
         return 2
@@ -135,6 +139,9 @@ def test_panel_flow():
     assert "Favqulodda to'xtatish yoqilgan" not in c.get("/").text
     # postni qaytarib olish
     assert "Qaytarib olish" in c.get("/posts").text
+    assert "Kanalga yuborish" in c.get("/posts").text
+    c.post("/posts/1/resend", data={"target_id": str(target_id)})
+    assert ("resend", 1, target_id) in pipe.published and "kanaliga yuborildi" in c.get("/posts").text
     c.post("/posts/1/recall")
     assert ("recall", 1) in pipe.published and "2 ta filial kanalidan" in c.get("/posts").text
     pipe.published.clear()

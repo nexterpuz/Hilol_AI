@@ -393,6 +393,24 @@ class Pipeline:
         await self._remember(delivery_id, True)
         return await self.publish(delivery_id)
 
+    async def resend(self, post_id: int, target_id: int) -> bool:
+        """Admin postni tanlangan kanalga qo'lda (qayta) yuboradi — holatidan qat'i nazar."""
+        async with Session() as s:
+            d = (await s.execute(
+                select(Delivery).where(Delivery.post_id == post_id, Delivery.target_id == target_id).order_by(Delivery.id.desc())
+            )).scalars().first()
+            if d is None:
+                d = Delivery(post_id=post_id, target_id=target_id, status="pending", reason="Admin qo'lda yubordi")
+                s.add(d)
+            elif d.status == "sending":
+                return False
+            else:
+                d.status, d.reason, d.target_msg_ids = "pending", "Admin qo'lda yubordi", []
+            await s.commit()
+            delivery_id = d.id
+        await db_log("resend", f"post={post_id} target={target_id}")
+        return await self.publish(delivery_id)
+
     async def recall(self, post_id: int) -> int:
         """Postni barcha filial kanallaridan o'chiradi (bosh kanalga tegmaydi). Qaytaradi: nechta kanaldan."""
         removed = 0
