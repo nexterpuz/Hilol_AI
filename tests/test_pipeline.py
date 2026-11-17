@@ -838,3 +838,32 @@ def test_discount_beats_event_words_and_presentation_is_event(monkeypatch):
     sent = [x for x in c.sent if x[0] == "ds_1"]
     assert len(sent) == 1 and "10% чегирмада" in sent[0][1]
     assert any(m[0] == "branch" and m[2] == "ds_1" for m in bot.msgs if isinstance(m, tuple))
+
+
+def test_uncertain_posts_go_to_manager_not_admin(monkeypatch):
+    """Matnsiz post: menejeri bor filialda menejerdan, menejersiz filialda admindan so'raladi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    monkeypatch.setattr(ai, "analyze", fake_analyze)
+    store, bot = {991: mk(991, "", photo_id=991)}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([Target(name="UN-M", username="un_m", manager_ids={"7501": "1"}), Target(name="UN-N", username="un_n")])
+            await s.commit()
+        await Pipeline(c, "manba", bot, premium=False).on_new([store[991]])
+        async with Session() as s:
+            rows = list((await s.execute(select(Delivery).order_by(Delivery.id.desc()).limit(2))).scalars())
+            names = {t.id: t.username for t in (await s.execute(select(Target))).scalars()}
+        return {names[d.target_id]: d for d in rows}
+
+    ds = asyncio.run(run())
+    m, n = ds["un_m"], ds["un_n"]
+    assert m.reason == "Filial tasdig'i kutilmoqda" and ("branch", m.id, "un_m") in bot.msgs
+    assert not any(isinstance(x, tuple) and x[0] == "ask" and x[1] == m.id for x in bot.msgs)  # adminga kelmadi
+    assert n.status == "pending" and any(isinstance(x, tuple) and x[0] == "ask" and x[1] == n.id for x in bot.msgs)

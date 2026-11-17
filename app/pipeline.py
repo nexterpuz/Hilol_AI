@@ -377,6 +377,9 @@ class Pipeline:
                     action, reason, quiet, branch, local = "ask", "Favqulodda to'xtatish yoqilgan", True, False, False
                 if not all(is_supported(m) for m in msgs):
                     action, reason = "ask", "Post turi avtomatik ko'chirilmaydi (so'rovnoma va h.k.)"
+                if action == "ask" and not branch and not quiet and t.manager_ids and t.mode != "manual":
+                    # Ikkilangan holat (matnsiz post, ishonch past va h.k.): bosh admin emas, filial menejeri hal qiladi
+                    branch, local, reason = True, "review", "Filial tasdig'i kutilmoqda"
                 delivery = Delivery(
                     post_id=post.id,
                     target_id=t.id,
@@ -388,7 +391,11 @@ class Pipeline:
                 plan.append((delivery.id, t, action, reason, quiet, branch, local))
             await s.commit()
             post_id = post.id
-            views = {t.id: preview_text(post, t) for t in targets} if text else {}
+            if text:
+                views = {t.id: preview_text(post, t) for t in targets}
+            else:
+                kind = "video" if any(m.document for m in msgs) else "rasm" if any(m.photo for m in msgs) else "media"
+                views = {t.id: f"(matnsiz post: {kind}{', ' + str(len(msgs)) + ' ta' if len(msgs) > 1 else ''})" for t in targets}
 
         await db_log("new_post", f"post={post_id} ids={ids}")
         for delivery_id, target, action, reason, quiet, branch, local in plan:
