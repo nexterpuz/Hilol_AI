@@ -259,7 +259,14 @@ async def scenario(monkeypatch):
     async with Session() as s:
         d31 = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine), Delivery.status == "pending").order_by(Delivery.id.desc()))).scalars().first()
     n = len(only(c.sent))
+    async with Session() as s:  # shu post shu kanal uchun eski, kutib qolgan nusxa
+        stale = Delivery(post_id=d31.post_id, target_id=d31.target_id, status="pending", reason="eski so'rov")
+        s.add(stale)
+        await s.commit()
+        stale_id = stale.id
     results = await asyncio.gather(p.publish(d31.id), p.publish(d31.id))
+    async with Session() as s:
+        assert (await s.get(Delivery, stale_id)).status == "rejected"  # yuborilgach eski so'rov navbatdan chiqadi
     assert sorted(results) == [False, True] and len(only(c.sent)) == n + 1
 
     # tasdiq talab qiladigan so'z: qolipga mos bo'lsa ham so'raladi

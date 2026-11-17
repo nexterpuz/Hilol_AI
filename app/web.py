@@ -564,8 +564,16 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                     .order_by(Delivery.id.desc()).limit(100)
                 )).scalars()
             )
+            # Post shu kanalga boshqa yo'l bilan (menejer, qo'lda) allaqachon chiqqan bo'lsa — navbatda ko'rsatilmaydi
+            sent_pairs = set((await s.execute(
+                select(Delivery.post_id, Delivery.target_id).where(
+                    Delivery.status == "sent", Delivery.post_id.in_({d.post_id for d in deliveries} or {0})
+                )
+            )).all())
             items = []
             for d in deliveries:
+                if (d.post_id, d.target_id) in sent_pairs:
+                    continue
                 post = await s.get(SourcePost, d.post_id)
                 if post is None or post.deleted:
                     continue
@@ -593,6 +601,16 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             request.session["warning"] = "Telegram akkaunt ulanmagan — post yuborilmadi."
         else:
             await agent.pipeline.approve(delivery_id)
+        return _go("/queue")
+
+    @app.post("/queue/{delivery_id}/dismiss")
+    async def queue_dismiss(delivery_id: int):
+        """Navbatdan olib tashlash: hech narsa yuborilmaydi va o'chirilmaydi, qaror ham eslab qolinmaydi."""
+        async with Session() as s:
+            d = await s.get(Delivery, delivery_id)
+            if d and d.status in ("pending", "skipped", "failed"):
+                d.status, d.reason = "rejected", "Admin navbatdan olib tashladi"
+                await s.commit()
         return _go("/queue")
 
     @app.post("/queue/{delivery_id}/reject")

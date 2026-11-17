@@ -102,7 +102,10 @@ async def _seed():
         s.add(post)
         await s.flush()
         sent = Delivery(post_id=post.id, target_id=t.id, status="sent", sent_at=now(), target_msg_ids=[9])
-        pend = Delivery(post_id=post.id, target_id=t.id, status="pending", reason="Sinov sababi 7391")
+        post_b = SourcePost(chat_id=-1, msg_ids=[2], text="Yangi kitob <script>alert(1)</script>")
+        s.add(post_b)
+        await s.flush()
+        pend = Delivery(post_id=post_b.id, target_id=t.id, status="pending", reason="Sinov sababi 7391")
         s.add_all([sent, pend])
         await s.flush()
         s.add(StatChannel(target_id=t.id, subscribers=1000, at=now() - timedelta(days=2)))
@@ -442,3 +445,41 @@ def test_change_bot_admins_from_panel():
         assert settings.admin_ids == [777, 5550001]
     finally:
         asyncio.run(save_admin_ids(before))
+
+
+def test_queue_hides_already_sent_and_dismiss():
+    """Kanalga allaqachon chiqqan post navbatda turmaydi; «Navbatdan olib tashlash» qarorni eslab qolmaydi."""
+    from sqlalchemy import select
+
+    from app.db import Decision
+
+    async def seed():
+        await init_db()
+        async with Session() as s:
+            t = Target(name="QH", username="qh_1")
+            p1 = SourcePost(chat_id=-67, msg_ids=[1], text="Tadbir posti QH-1")
+            p2 = SourcePost(chat_id=-67, msg_ids=[2], text="Boshqa post QH-2")
+            s.add_all([t, p1, p2])
+            await s.flush()
+            s.add_all([
+                Delivery(post_id=p1.id, target_id=t.id, status="pending", reason="AI'siz qoidalar: bosh do'kon"),
+                Delivery(post_id=p1.id, target_id=t.id, status="sent", reason="Filial tasdig'i kutilmoqda"),
+            ])
+            d2 = Delivery(post_id=p2.id, target_id=t.id, status="pending", reason="sabab")
+            s.add(d2)
+            await s.commit()
+            return d2.id
+
+    d2 = asyncio.run(seed())
+    c = TestClient(create_app(FakeAgent(FakePipeline())), follow_redirects=False)
+    c.post("/login", data={"username": "admin", "password": "sinov-parol"})
+    q = c.get("/queue").text
+    assert "QH-1" not in q and "QH-2" in q and "Navbatdan olib tashlash" in q
+
+    async def decisions():
+        async with Session() as s:
+            return len(list((await s.execute(select(Decision))).scalars()))
+
+    before = asyncio.run(decisions())
+    c.post(f"/queue/{d2}/dismiss")
+    assert "QH-2" not in c.get("/queue").text and asyncio.run(decisions()) == before

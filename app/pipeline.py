@@ -445,6 +445,13 @@ class Pipeline:
             d = await s.get(Delivery, delivery_id)
             d.status, d.sent_at = "sent", now()
             d.target_msg_ids = [by_source.get(i) for i in post.msg_ids]
+            # Shu post shu kanal uchun kutib turgan boshqa so'rovlar endi kerak emas
+            await s.execute(
+                update(Delivery).where(
+                    Delivery.post_id == d.post_id, Delivery.target_id == d.target_id, Delivery.id != d.id,
+                    Delivery.status.in_(("pending", "skipped", "failed")),
+                ).values(status="rejected", reason="Post bu kanalga allaqachon yuborilgan")
+            )
             await s.commit()
         await db_log("sent", f"delivery={delivery_id} target={target.username}")
         return True

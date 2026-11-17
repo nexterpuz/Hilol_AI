@@ -34,7 +34,8 @@
 {% endif %}
 <div class="row">
 <form method="post" action="/queue/{{ i.d.id }}/send"><button class="btn primary" type="submit">{{ "Yuborish" if i.d.status == "pending" else "Baribir yuborish" }}</button></form>
-<form method="post" action="/queue/{{ i.d.id }}/reject"><button class="btn" type="submit">Rad etish</button></form>
+<form method="post" action="/queue/{{ i.d.id }}/reject"><button class="btn" type="submit" title="Bu kanalga yuborilmaydi; o'xshash postlar keyin ham shu kanalga yuborilmaydi">Rad etish</button></form>
+<form method="post" action="/queue/{{ i.d.id }}/dismiss"><button class="btn" type="submit" title="Faqat navbatdan olib tashlaydi: hech narsa yuborilmaydi, qaror eslab qolinmaydi">Navbatdan olib tashlash</button></form>
 </div>
 </section>
 {% endmacro %}
