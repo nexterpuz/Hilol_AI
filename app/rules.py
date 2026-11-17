@@ -142,8 +142,13 @@ def analyze(text: str, targets: list) -> Analysis:
     base = 0.9 if block_type != "none" or len(text) < 300 or is_discount(text) else 0.5
 
     def mentioned(t) -> bool:
+        # Kalit so'z faqat do'kon/ish tartibi haqidagi qatorda hisobga olinadi:
+        # "Имом ат-Термизий жоме масжиди" Termiz filialiga tegishli e'lon emas
         words = [norm(w.strip()) for w in (t.keywords or "").split(",") if w.strip()]
-        return any(w in norm(body) for w in words)
+        return any(
+            any(w in line for w in words) and any(sw in line for sw in STORE_WORDS)
+            for line in norm(body).split("\n")
+        )
 
     cities, head = local_groups(body)
     named = {t.id for t in targets if mentioned(t) or (cities & target_groups(t))}

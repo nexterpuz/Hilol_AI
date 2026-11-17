@@ -45,7 +45,8 @@ def closing_for(target, block_type: str | None) -> str:
 DEFAULT_ASK_WORDS = ""  # admin o'zi qo'shadi (panel: Qoidalar)
 # Faqat bosh kanal uchun postlar (vakansiya va h.k.): filiallarga chiqmaydi va hech kimdan so'ralmaydi
 DEFAULT_SKIP_WORDS = (
-    "вакансия, vakansiya, ишга қабул, ishga qabul, ишга таклиф, ishga taklif, ариза юбориш, ariza yuborish"
+    "вакансия, vakansiya, ишга қабул, ishga qabul, ишга таклиф, ishga taklif, ариза юбориш, ariza yuborish, "
+    "бўлиб ўтди, bo'lib o'tdi, якунига етди, yakuniga yetdi"
 )
 
 

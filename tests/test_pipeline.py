@@ -936,3 +936,20 @@ def test_republish_fixes_old_partial_album(monkeypatch):
     assert (ok, total) == (1, 1) and len(sent) == 1 and len(sent[0][2]) == 6
     assert ("rp_1", [5000]) in c.deleted  # eski 1 rasmli nusxa o'chirildi
     assert stray_ok is False and stray_status == "rejected"  # bo'lak alohida chiqmaydi
+
+
+def test_city_name_inside_other_words_is_not_branch_post():
+    """Haqiqiy post: "Имом ат-Термизий жоме масжиди" — Termiz filialiga tegishli emas; tadbir hisoboti filiallarga chiqmaydi."""
+    from types import SimpleNamespace as T
+
+    from app.pipeline import DEFAULT_SKIP_WORDS, ask_word_in
+
+    report = ("✨ «Тафсири Ҳилол» китоби ҳақида суҳбат бўлиб ўтди\n\n"
+              "Тадбирга Имом ат-Термизий жоме масжиди имом-хатиби устоз Яҳё домла меҳмон бўлдилар.\n\n"
+              "Суҳбат Қуръони Карим тиловати ва дуолар билан якунига етди.\n\n@hilolnashr")
+    targets = [T(id=1, name="Hilol Nashr Termiz", keywords="Termiz, Термиз"), T(id=2, name="Qo'qon", keywords="Qo'qon")]
+    a = fallback.analyze(report, targets)
+    assert all(d.scope == "general" for d in a.decisions)  # Termizga xos emas
+    assert ask_word_in(report, DEFAULT_SKIP_WORDS)  # o'tgan tadbir hisoboti — faqat bosh kanal uchun
+    closed = fallback.analyze("Термиздаги дўконимиз бугун ишламайди\n\n@hilolnashr", targets)
+    assert closed.for_target(1).scope == "own" and closed.for_target(2).scope == "other"
