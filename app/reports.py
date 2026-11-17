@@ -292,25 +292,33 @@ async def ranking() -> dict:
     from .web import compare_data
 
     data = await compare_data(7)
-    rated = [c for c in data["channels"] if c["active"] and c["reach"] is not None]
+    active = [c for c in data["channels"] if c["active"]]
+    rated = [c for c in active if c["reach"] is not None]
     rated.sort(key=lambda c: (c["reach"], c["growth_pct"] or 0), reverse=True)
     average = sum(c["reach"] for c in rated) / len(rated) if rated else 0
     return {
-        "total": len(rated), "average": average,
+        "total": len(active), "rated": len(rated), "average": average,
         "ranks": {c["id"]: {"rank": i + 1, "reach": c["reach"], "name": c["name"]} for i, c in enumerate(rated)},
     }
 
 
 def rating_text(target_id: int, rk: dict, previous: dict | None, with_name: bool = False) -> str:
     mine = rk["ranks"].get(target_id)
+    rated = rk.get("rated", len(rk["ranks"]))
     if mine is None:
-        return "🏆 Reyting: hali hisoblanmadi.\nReyting uchun filial kanalida oxirgi 7 kunda chiqqan postlarning ko'rishlar soni kerak."
+        return (
+            f"🏆 Reyting: hali hisoblanmadi ({rk['total']} ta filialdan {rated} tasida reyting bor).\n"
+            "Reyting uchun filial kanalida oxirgi 7 kunda chiqqan postlarning ko'rishlar soni kerak — "
+            "statistika soatiga bir marta yig'iladi."
+        )
     prev = (previous or {}).get(str(target_id))
     head = f"{mine['name']}\n" if with_name else ""
     return (
         f"{head}🏆 Reyting: {mine['rank']}-o'rin ({rk['total']} ta filial ichida), {change_label(mine['rank'], prev)}\n"
         f"🎯 Baho: {grade(mine['reach'], rk['average'])}\n"
-        f"📈 Qamrov: {mine['reach']}% (filiallar o'rtachasi {round(rk['average'])}%)\n\n"
+        f"📈 Qamrov: {mine['reach']}% (filiallar o'rtachasi {round(rk['average'])}%)\n"
+        + (f"ℹ️ {rk['total'] - rated} ta filialda hali yetarli ma'lumot yo'q, ular reytingga kirmagan.\n" if rk["total"] > rated else "")
+        + "\n"
         "Reyting oxirgi 7 kundagi postlarning o'rtacha qamrovi (ko'rishlar ÷ obunachilar) bo'yicha hisoblanadi."
     )
 

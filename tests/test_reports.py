@@ -430,3 +430,41 @@ def test_report_menu_and_period_choice(monkeypatch):
 
 def test_daily_period_label():
     assert reports.period_of("daily", datetime(2026, 11, 14, 18, 0, tzinfo=T)) == (1, "Kunlik hisobot", "14 noyabr 2026")
+
+
+def test_rating_counts_all_channels():
+    """Reyting xabari barcha faol filiallarni sanaydi; ma'lumotsizlar alohida aytiladi."""
+    rk = {"total": 12, "rated": 4, "average": 22.0, "ranks": {1: {"rank": 1, "reach": 25, "name": "Q"}}}
+    text = reports.rating_text(1, rk, {"1": 1})
+    assert text.startswith("🏆 Reyting: 1-o'rin (12 ta filial ichida), kechaga nisbatan o'zgarmadi")
+    assert "8 ta filialda hali yetarli ma'lumot yo'q" in text
+    assert "12 ta filialdan 4 tasida reyting bor" in reports.rating_text(99, rk, None)
+    full = {"total": 3, "rated": 3, "average": 30.0, "ranks": {1: {"rank": 2, "reach": 31, "name": "Q"}}}
+    assert "yetarli ma'lumot yo'q" not in reports.rating_text(1, full, None)
+
+
+def test_stats_failure_is_logged_once():
+    from types import SimpleNamespace as NS
+
+    from sqlalchemy import select, update
+
+    from app import stats
+    from app.db import Event
+
+    class Bad:
+        async def __call__(self, req):
+            raise RuntimeError("CHANNEL_PRIVATE")
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add(Target(name="SF", username="sf_1"))
+            await s.commit()
+        await stats.collect_once(Bad())
+        await stats.collect_once(Bad())  # ikkinchi marta jurnalga yozilmaydi
+        async with Session() as s:
+            return [e.detail for e in (await s.execute(select(Event).where(Event.kind == "stats_failed"))).scalars() if "sf_1" in e.detail]
+
+    rows = asyncio.run(run())
+    assert len(rows) == 1 and "CHANNEL_PRIVATE" in rows[0]

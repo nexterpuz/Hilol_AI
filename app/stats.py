@@ -16,6 +16,21 @@ log = logging.getLogger(__name__)
 TRACK_DAYS = 7  # post shuncha kun davomida kuzatiladi
 
 
+_failed_at: dict = {}
+
+
+async def _report_failure(username: str, error: Exception) -> None:
+    """Statistika yig'ilmagan kanalni panel Jurnaliga yozadi (bir kanal uchun 6 soatda bir marta)."""
+    from .db import log as db_log
+
+    t = now()
+    last = _failed_at.get(username)
+    if last and (t - last).total_seconds() < 6 * 3600:
+        return
+    _failed_at[username] = t
+    await db_log("stats_failed", f"@{username}: {type(error).__name__}: {str(error)[:150]}")
+
+
 async def collect_once(client) -> None:
     async with Session() as s:
         targets = list((await s.execute(select(Target).where(Target.active))).scalars())
@@ -39,8 +54,9 @@ async def collect_once(client) -> None:
                     msgs = await client.get_messages(t.username, ids=ids)
                     views = max((m.views or 0 for m in msgs if m), default=0)
                     s.add(StatPost(delivery_id=d.id, views=views, reach=views / subs if subs else None))
-            except Exception:
+            except Exception as e:
                 log.exception("Statistika yig'ilmadi: %s", t.username)
+                await _report_failure(t.username, e)
         await s.commit()
 
 
