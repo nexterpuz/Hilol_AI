@@ -88,7 +88,7 @@ EVENT_LABELS = {
     "new_post": "Yangi post", "sent": "Yuborildi", "failed": "Xatolik", "edited": "Tahrir sinxronlandi",
     "deleted": "O'chirish sinxronlandi", "account_started": "Akkaunt ulandi", "account_lost": "Akkaunt uzildi",
     "source_changed": "Manba o'zgartirildi", "ai_failed": "AI ishlamadi (zaxira qoidalar)",
-    "report_sent": "Hisobot yuborildi", "rating_sent": "Reyting yuborildi", "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi", "resend": "Qo'lda yuborildi", "catch_up": "O'tkazib yuborilgan postlar", "admins_changed": "Bot adminlari o'zgartirildi", "delete_ignored": "Noto'g'ri o'chirish signali e'tiborsiz qoldirildi",
+    "report_sent": "Hisobot yuborildi", "rating_sent": "Reyting yuborildi", "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi", "resend": "Qo'lda yuborildi", "catch_up": "O'tkazib yuborilgan postlar", "admins_changed": "Bot adminlari o'zgartirildi", "ask_managers": "Menejerlardan so'raldi", "delete_ignored": "Noto'g'ri o'chirish signali e'tiborsiz qoldirildi",
 }
 
 
@@ -388,6 +388,18 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             request.session["saved"] = f"Post {target.name} kanaliga yuborildi."
         else:
             request.session["warning"] = f"Post {target.name} kanaliga yuborilmadi — Jurnal sahifasida sababini ko'ring."
+        return _go("/posts")
+
+    @app.post("/posts/{post_id}/ask-managers")
+    async def post_ask_managers(request: Request, post_id: int):
+        if agent is None or agent.pipeline is None:
+            request.session["warning"] = "Telegram akkaunt ulanmagan."
+            return _go("/posts")
+        asked, without = await agent.pipeline.ask_managers(post_id)
+        note = f"{asked} ta filial menejeriga so'rov yuborildi."
+        if without:
+            note += f" {without} ta filialda menejer botga bog'lanmagan — ularga yuborilmadi."
+        request.session["saved" if asked else "warning"] = note if asked or without else "Post barcha kanallarga allaqachon chiqqan."
         return _go("/posts")
 
     @app.post("/posts/{post_id}/retry")

@@ -771,3 +771,39 @@ def test_event_and_live_posts_go_to_managers(monkeypatch):
     assert not [x for x in c.sent if x[0].startswith("ev_")]  # hech qayerga o'zi chiqmadi
     assert ds["ev_m"].reason == "Filial tasdig'i kutilmoqda" and ("branch", ds["ev_m"].id, "ev_m") in bot.msgs
     assert ds["ev_n"].status == "pending" and ("ask", ds["ev_n"].id, False) in bot.msgs
+
+
+def test_admin_asks_all_managers(monkeypatch):
+    """Admin postni barcha menejerlarga yuboradi: chiqqan kanal va menejersiz filial o'tkazib yuboriladi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    store, bot = {}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            a = Target(name="AM-A", username="am_a", manager_ids={"7301": "1"})
+            b = Target(name="AM-B", username="am_b", manager_ids={"7302": "2"})
+            n = Target(name="AM-N", username="am_n")
+            post = SourcePost(chat_id=-71, msg_ids=[1], text="Yangi kitob\n\n@hilolnashr")
+            s.add_all([a, b, n, post])
+            await s.flush()
+            s.add(Delivery(post_id=post.id, target_id=b.id, status="sent"))  # B ga allaqachon chiqqan
+            failed = Delivery(post_id=post.id, target_id=a.id, status="failed", reason="xato")
+            s.add(failed)
+            await s.commit()
+            ids = (post.id, a.id, failed.id)
+        p = Pipeline(c, "manba", bot, premium=False)
+        res = await p.ask_managers(ids[0])
+        async with Session() as s:
+            d = await s.get(Delivery, ids[2])
+        return res, d, ids
+
+    (asked, without), d, ids = asyncio.run(run())
+    assert (asked, without) == (1, 1)
+    assert d.status == "pending" and d.reason == "Filial tasdig'i kutilmoqda"  # eski xato nusxa qayta ishlatildi
+    assert [m for m in bot.msgs if isinstance(m, tuple) and m[0] == "branch"] == [("branch", ids[2], "am_a")]

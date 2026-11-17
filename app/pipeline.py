@@ -512,6 +512,42 @@ class Pipeline:
         await db_log("resend", f"post={post_id} target={target_id}")
         return await self.publish(delivery_id)
 
+    async def ask_managers(self, post_id: int) -> tuple[int, int]:
+        """Admin postni barcha filial menejerlariga tasdiqlash uchun yuboradi.
+
+        Post allaqachon chiqqan kanallar o'tkazib yuboriladi. Qaytaradi: (so'ralgan filiallar, menejersiz filiallar).
+        """
+        async with Session() as s:
+            post = await s.get(SourcePost, post_id)
+            if post is None or post.deleted:
+                return 0, 0
+            targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
+            sent = set((await s.execute(
+                select(Delivery.target_id).where(Delivery.post_id == post_id, Delivery.status == "sent")
+            )).scalars())
+            plan, without = [], 0
+            for t in targets:
+                if t.id in sent:
+                    continue
+                if not t.manager_ids:
+                    without += 1
+                    continue
+                d = (await s.execute(
+                    select(Delivery).where(Delivery.post_id == post_id, Delivery.target_id == t.id).order_by(Delivery.id.desc())
+                )).scalars().first()
+                if d is None or d.status in ("sending", "deleted"):
+                    d = Delivery(post_id=post_id, target_id=t.id)
+                    s.add(d)
+                d.status, d.reason = "pending", "Filial tasdig'i kutilmoqda"
+                await s.flush()
+                plan.append((d.id, t, preview_text(post, t, d) or "(matnsiz post)"))
+            await s.commit()
+        if self.notifier:
+            for delivery_id, t, text in plan:
+                await self.notifier.ask_branch(delivery_id, t, text, local="admin")
+        await db_log("ask_managers", f"post={post_id} filiallar={len(plan)}")
+        return len(plan), without
+
     async def retry_failed(self, post_id: int) -> tuple[int, int]:
         """Xato bergan nusxalarni qayta yuboradi. Qaytaradi: (yuborildi, jami urinildi)."""
         async with Session() as s:

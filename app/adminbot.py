@@ -150,7 +150,10 @@ class AdminBot:
 
     async def ask_branch(self, delivery_id: int, target, text: str, local: bool = False) -> None:
         """Postni filial menejer(lar)iga tasdiqlash uchun yuboradi; menejer bog'lanmagan bo'lsa — bosh adminga."""
-        if local == "event":
+        if local == "admin":
+            intro = "Bosh admin bu postni filial kanalingizga joylashni taklif qilmoqda. Joylansinmi?"
+            why = "Bosh admin so'rovi"
+        elif local == "event":
             intro = "Bu post suhbat, tadbir yoki jonli efirga taklif. Filial kanalingizga ham joylansinmi?"
             why = "Tadbir/efir posti"
         elif local == "head":
