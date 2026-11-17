@@ -13,6 +13,16 @@
 <div class="muted">Bundan tashqari, postda biror shahar nomi «do'kon» yoki «filial» so'zi bilan bitta qatorda kelsa (masalan «Намангандаги дўконимиз ишламайди») yoki «бош дўкон» tilga olinsa, post faqat o'sha filial kanaliga chiqadi, qolganlari uchun sizdan so'raladi.</div>
 </section>
 <section class="card">
+<h2>Suhbat, tadbir va jonli efir so'zlari</h2>
+<div class="muted">Matnida shu so'zlardan biri bo'lgan post har bir filial menejeriga botdan yuboriladi: menejer «Kanalga joylash» ni bossa, o'z kanaliga chiqadi. Menejeri botga bog'lanmagan filial uchun sizdan so'raladi.</div>
+<form method="post" action="/rules/ask-words">
+<input type="hidden" name="kind" value="event_words">
+<label for="ewords">So'zlar</label>
+<div class="row"><input id="ewords" name="words" type="text" value="{{ event_words }}" style="flex:1 1 260px">
+<button class="btn primary" type="submit">Saqlash</button></div>
+</form>
+</section>
+<section class="card">
 <h2>Filial tasdig'ini talab qiladigan so'zlar</h2>
 <div class="muted">Yangi nashr yoki «tez kunda sotuvda» kabi postlar: kitob hali filialga yetib kelmagan bo'lishi mumkin. Matnida shu so'zlardan biri bo'lgan post filial menejeriga botdan yuboriladi va u «Kanalga joylash» ni bosgach chiqadi. Faqat sozlamasida «filial tasdig'i» yoqilgan kanallarga taalluqli; oddiy sotuv postlari kutmasdan chiqadi.</div>
 <form method="post" action="/rules/ask-words">

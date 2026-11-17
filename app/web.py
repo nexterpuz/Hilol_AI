@@ -124,6 +124,9 @@ async def posts_data(days: int) -> dict:
         sent = list((await s.execute(
             select(Delivery).where(Delivery.post_id.in_(ids), Delivery.status.in_(("sent", "deleted")), Delivery.sent_at.is_not(None))
         )).scalars()) if ids else []
+        failed_counts: dict = defaultdict(int)
+        for pid in (await s.execute(select(Delivery.post_id).where(Delivery.post_id.in_(ids), Delivery.status == "failed"))).scalars() if ids else []:
+            failed_counts[pid] += 1
         d_ids = [d.id for d in sent]
         stats_rows = list((await s.execute(
             select(StatPost).where(StatPost.delivery_id.in_(d_ids)).order_by(StatPost.at)
@@ -142,6 +145,7 @@ async def posts_data(days: int) -> dict:
         rows.append({
             "id": p.id, "text": (p.text or "(matnsiz post)").split("\n")[0][:90], "when": local_time(p.created_at),
             "deleted": p.deleted, "channels": len(mine), "live": sum(1 for d in mine if d.status == "sent"),
+            "failed": failed_counts.get(p.id, 0),
             "v1": _total([views_at(snaps[d.id], d.sent_at, 1, t) for d in mine]),
             "v24": _total([views_at(snaps[d.id], d.sent_at, 24, t) for d in mine]),
             "v72": _total([views_at(snaps[d.id], d.sent_at, 72, t) for d in mine]),
@@ -384,6 +388,16 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             request.session["saved"] = f"Post {target.name} kanaliga yuborildi."
         else:
             request.session["warning"] = f"Post {target.name} kanaliga yuborilmadi — Jurnal sahifasida sababini ko'ring."
+        return _go("/posts")
+
+    @app.post("/posts/{post_id}/retry")
+    async def post_retry(request: Request, post_id: int):
+        if agent is None or agent.pipeline is None:
+            request.session["warning"] = "Telegram akkaunt ulanmagan — postni yuborib bo'lmaydi."
+        else:
+            ok, total = await agent.pipeline.retry_failed(post_id)
+            key = "saved" if ok == total else "warning"
+            request.session[key] = f"Xato bergan {total} ta kanaldan {ok} tasiga qayta yuborildi."
         return _go("/posts")
 
     @app.post("/posts/{post_id}/recall")
@@ -732,17 +746,19 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             items = list((await s.execute(select(Rule).order_by(Rule.id))).scalars())
             row = await s.get(Setting, "ask_words")
             brow = await s.get(Setting, "branch_words")
-        from .pipeline import DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS
+            erow = await s.get(Setting, "event_words")
+        from .pipeline import DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_EVENT_WORDS
 
         return page(
             request, "rules.html", rules=items, ask_words=row.value if row is not None else DEFAULT_ASK_WORDS,
             branch_words=brow.value if brow is not None else DEFAULT_BRANCH_WORDS,
+            event_words=erow.value if erow is not None else DEFAULT_EVENT_WORDS,
             saved=request.session.pop("saved", ""),
         )
 
     @app.post("/rules/ask-words")
     async def ask_words_save(request: Request, words: str = Form(""), kind: str = Form("ask_words")):
-        key = kind if kind in ("ask_words", "branch_words") else "ask_words"
+        key = kind if kind in ("ask_words", "branch_words", "event_words") else "ask_words"
         clean = ", ".join(w.strip() for w in words.replace("\n", ",").split(",") if w.strip())
         async with Session() as s:
             row = await s.get(Setting, key)

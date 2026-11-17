@@ -35,7 +35,8 @@
 <td class="num">{{ n(r.v72) }}</td>
 <td class="num">{{ n(r.now) }}</td>
 <td class="num">{{ n(r.reach, "%") }}</td>
-<td class="num">{% if not r.deleted and targets %}<form class="inline" method="post" action="/posts/{{ r.id }}/resend" onsubmit="return confirm('Post tanlangan kanalga yuboriladi. Kanalda allaqachon bo\'lsa, ikkinchi nusxa chiqadi. Davom etasizmi?')">
+<td class="num">{% if r.failed and not r.deleted %}<form class="inline" method="post" action="/posts/{{ r.id }}/retry"><button class="btn primary" type="submit">Xato berganlarga qayta yuborish ({{ r.failed }})</button></form>{% endif %}
+{% if not r.deleted and targets %}<form class="inline" method="post" action="/posts/{{ r.id }}/resend" onsubmit="return confirm('Post tanlangan kanalga yuboriladi. Kanalda allaqachon bo\'lsa, ikkinchi nusxa chiqadi. Davom etasizmi?')">
 <label for="rt{{ r.id }}" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Kanal</label>
 <select id="rt{{ r.id }}" name="target_id" style="width:auto;min-width:140px">{% for t in targets %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>
 <button class="btn" type="submit">Kanalga yuborish</button></form>{% endif %}

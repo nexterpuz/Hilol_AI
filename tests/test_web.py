@@ -242,7 +242,9 @@ def test_panel_flow():
     assert "Aksiya postlari" in rules_page and "вакансия" in rules_page
     c.post("/rules/ask-words", data={"words": "tanlov ,  konkurs,,"})
     assert 'value="tanlov, konkurs"' in c.get("/rules").text
-    assert "тез кунда" in c.get("/rules").text
+    assert "тез кунда" in c.get("/rules").text and "жонли" in c.get("/rules").text
+    c.post("/rules/ask-words", data={"words": "jonli, efir", "kind": "event_words"})
+    assert 'value="jonli, efir"' in c.get("/rules").text
     c.post("/rules/ask-words", data={"words": "tez orada", "kind": "branch_words"})
     r2 = c.get("/rules").text
     assert 'value="tez orada"' in r2 and 'value="tanlov, konkurs"' in r2

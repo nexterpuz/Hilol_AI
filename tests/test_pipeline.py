@@ -706,3 +706,68 @@ def test_head_store_post_goes_to_managers_and_discounts_publish(monkeypatch):
     # bitta do'kondagi chegirma: faqat o'sha filialga
     assert ls["hd_qoqon"].status == "sent" and ls["hd_andijon"].status == "skipped"
     assert [x[0] for x in c.sent].count("hd_andijon") == 1
+
+
+def test_link_preview_post_is_sent_as_text(monkeypatch):
+    """Havola ko'rinishi (rasmli link preview) bor post fayl sifatida emas, matn sifatida yuboriladi."""
+    from sqlalchemy import update
+    from telethon.tl.types import MessageMediaWebPage, WebPageEmpty
+
+    from app.pipeline import Pipeline, is_file, media_id
+
+    monkeypatch.setattr(ai, "analyze", fake_analyze)
+    m = mk(961, "Yangi kitob\nhilol.uz saytida\n\n@hilolnashr", photo_id=777)
+    m.media = MessageMediaWebPage(webpage=WebPageEmpty(id=1))  # Telethon bunda ham m.photo ni qaytaradi
+    assert not is_file(m) and media_id(m) is None
+    store = {961: m}
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add(Target(name="LP", username="lp_1"))
+            await s.commit()
+        p = Pipeline(c, "manba", Bot(), premium=False)
+        await p.on_new([m])
+        # avval xato bergan nusxani qayta yuborish
+        async with Session() as s:
+            d = (await s.execute(select(Delivery).order_by(Delivery.id.desc()))).scalars().first()
+            d.status, d.reason = "failed", "Telegram: Cannot use MessageMediaWebPage as file"
+            await s.commit()
+            pid = d.post_id
+        return await p.retry_failed(pid)
+
+    retried = asyncio.run(run())
+    sent = [x for x in c.sent if x[0] == "lp_1"]
+    assert len(sent) == 2 and all(x[2] is None for x in sent)  # send_message, fayl emas
+    assert retried == (1, 1)
+
+
+def test_event_and_live_posts_go_to_managers(monkeypatch):
+    """Suhbat / jonli efir posti: menejeri bor filialda menejerdan, menejersiz filialda admindan so'raladi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    monkeypatch.setattr(ai, "analyze", fake_analyze)
+    live = "🔴 Ҳозир жонли эфирда устозлар билан суҳбат. Томоша қилинг!\n\n@hilolnashr"
+    store, bot = {971: mk(971, live)}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([Target(name="EV-M", username="ev_m", manager_ids={"7201": "1"}), Target(name="EV-N", username="ev_n")])
+            await s.commit()
+        await Pipeline(c, "manba", bot, premium=False).on_new([store[971]])
+        async with Session() as s:
+            rows = list((await s.execute(select(Delivery).order_by(Delivery.id.desc()).limit(2))).scalars())
+            names = {t.id: t.username for t in (await s.execute(select(Target))).scalars()}
+        return {names[d.target_id]: d for d in rows}
+
+    ds = asyncio.run(run())
+    assert not [x for x in c.sent if x[0].startswith("ev_")]  # hech qayerga o'zi chiqmadi
+    assert ds["ev_m"].reason == "Filial tasdig'i kutilmoqda" and ("branch", ds["ev_m"].id, "ev_m") in bot.msgs
+    assert ds["ev_n"].status == "pending" and ("ask", ds["ev_n"].id, False) in bot.msgs

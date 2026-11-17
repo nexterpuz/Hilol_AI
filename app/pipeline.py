@@ -50,6 +50,13 @@ DEFAULT_ASK_WORDS = "вакансия, vakansiya, ишга таклиф, ари�
 DEFAULT_BRANCH_WORDS = "тез кунда, tez kunda, нашрдан чиқди, нашр қилинди, nashrdan chiqdi, nashr qilindi"
 
 
+# Suhbat, tadbir, jonli efir: har bir filial menejeri o'z kanaliga joylash-joylamaslikni o'zi hal qiladi
+DEFAULT_EVENT_WORDS = (
+    "суҳбат, suhbat, жонли, jonli, эфир, efir, "
+    "тадбир, tadbir, учрашув, uchrashuv, ташриф буюринг, tashrif buyuring"
+)
+
+
 def ask_word_in(text: str, words: str) -> str:
     """Matnda tasdiq talab qiladigan so'z bormi: topilgan so'z yoki bo'sh satr."""
     low = (text or "").lower()
@@ -156,6 +163,8 @@ def text_hash(msg) -> str:
 
 def media_id(msg) -> int | None:
     """Xabardagi rasm yoki faylning Telegram ID si (almashtirilganini aniqlash uchun)."""
+    if isinstance(msg.media, MessageMediaWebPage):
+        return None  # havola ko'rinishidagi rasm — xabarning o'z fayli emas
     if msg.photo:
         return msg.photo.id
     if msg.document:
@@ -164,6 +173,10 @@ def media_id(msg) -> int | None:
 
 
 def is_file(msg) -> bool:
+    """Xabarning o'z rasmi/videosi/fayli bormi. Havola ko'rinishi (link preview) rasm hisoblanmaydi:
+    Telethon unda ham msg.photo ni qaytaradi, lekin uni fayl sifatida yuborib bo'lmaydi."""
+    if isinstance(msg.media, MessageMediaWebPage):
+        return False
     return bool(msg.photo or msg.document)
 
 
@@ -275,6 +288,8 @@ class Pipeline:
             ask_words = row.value if row is not None else DEFAULT_ASK_WORDS
             row = await s.get(Setting, "branch_words")
             branch_words = row.value if row is not None else DEFAULT_BRANCH_WORDS
+            row = await s.get(Setting, "event_words")
+            event_words = row.value if row is not None else DEFAULT_EVENT_WORDS
             pause_row = await s.get(Setting, "paused")
             paused = bool(pause_row and pause_row.value == "1")
 
@@ -338,6 +353,12 @@ class Pipeline:
                 elif scope == "head" and t.mode != "manual" and t.manager_ids:
                     # Bosh do'kon tadbiri/e'loni: filial kanaliga joylashni filial menejeri hal qiladi
                     action, reason, quiet, branch, local = "ask", "Filial tasdig'i kutilmoqda", False, True, "head"
+                elif t.mode != "manual" and action == "send" and ask_word_in(text, event_words):
+                    if t.manager_ids:
+                        # Suhbat / jonli efir / tadbir: filial menejeri tasdiqlasa kanalga chiqadi
+                        action, reason, quiet, branch, local = "ask", "Filial tasdig'i kutilmoqda", False, True, "event"
+                    else:
+                        action, reason = "ask", "Tadbir/efir posti: filial menejeri botga bog'lanmagan"
                 elif t.branch_approval and action == "send" and ask_word_in(text, branch_words):
                     # Yangi nashr yoki "tez kunda": kitob filialga kelgach, menejer o'zi tasdiqlaydi
                     action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True
@@ -490,6 +511,17 @@ class Pipeline:
             delivery_id = d.id
         await db_log("resend", f"post={post_id} target={target_id}")
         return await self.publish(delivery_id)
+
+    async def retry_failed(self, post_id: int) -> tuple[int, int]:
+        """Xato bergan nusxalarni qayta yuboradi. Qaytaradi: (yuborildi, jami urinildi)."""
+        async with Session() as s:
+            failed = list((await s.execute(
+                select(Delivery).where(Delivery.post_id == post_id, Delivery.status == "failed")
+            )).scalars())
+        ok = 0
+        for d in failed:
+            ok += await self.resend(post_id, d.target_id)
+        return ok, len(failed)
 
     async def recall(self, post_id: int) -> int:
         """Postni barcha filial kanallaridan o'chiradi (bosh kanalga tegmaydi). Qaytaradi: nechta kanaldan."""
