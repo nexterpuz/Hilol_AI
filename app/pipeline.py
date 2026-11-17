@@ -42,7 +42,11 @@ def closing_for(target, block_type: str | None) -> str:
 
 
 # Shu so'zlar uchragan post avtomatik chiqmaydi, admindan so'raladi (panelda o'zgartiriladi)
-DEFAULT_ASK_WORDS = "вакансия, vakansiya, ишга таклиф, ариза юбориш"
+DEFAULT_ASK_WORDS = ""  # admin o'zi qo'shadi (panel: Qoidalar)
+# Faqat bosh kanal uchun postlar (vakansiya va h.k.): filiallarga chiqmaydi va hech kimdan so'ralmaydi
+DEFAULT_SKIP_WORDS = (
+    "вакансия, vakansiya, ишга қабул, ishga qabul, ишга таклиф, ishga taklif, ариза юбориш, ariza yuborish"
+)
 
 
 # Filial tasdig'i yoqilgan kanalda shu so'zlar uchragan post menejer tasdig'ini kutadi:
@@ -286,6 +290,8 @@ class Pipeline:
             memory = list((await s.execute(select(Decision).order_by(Decision.id.desc()).limit(300))).scalars())
             row = await s.get(Setting, "ask_words")
             ask_words = row.value if row is not None else DEFAULT_ASK_WORDS
+            row = await s.get(Setting, "skip_words")
+            skip_words = row.value if row is not None else DEFAULT_SKIP_WORDS
             row = await s.get(Setting, "branch_words")
             branch_words = row.value if row is not None else DEFAULT_BRANCH_WORDS
             row = await s.get(Setting, "event_words")
@@ -363,7 +369,11 @@ class Pipeline:
                 elif t.branch_approval and action == "send" and ask_word_in(text, branch_words):
                     # Yangi nashr yoki "tez kunda": kitob filialga kelgach, menejer o'zi tasdiqlaydi
                     action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True
-                if paused:
+                skip_word = ask_word_in(text, skip_words)
+                if skip_word:
+                    # Faqat bosh kanal uchun (masalan, vakansiya): filialga chiqmaydi, so'ralmaydi
+                    action, reason, quiet, branch, local = "skip", f"Faqat bosh kanal uchun («{skip_word}»)", True, False, False
+                if paused and action != "skip":
                     action, reason, quiet, branch, local = "ask", "Favqulodda to'xtatish yoqilgan", True, False, False
                 if not all(is_supported(m) for m in msgs):
                     action, reason = "ask", "Post turi avtomatik ko'chirilmaydi (so'rovnoma va h.k.)"

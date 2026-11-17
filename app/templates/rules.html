@@ -3,11 +3,21 @@
 <h1>Qoidalar va istisnolar</h1>
 {% if saved %}<div class="note ok" role="status">{{ saved }}</div>{% endif %}
 <section class="card">
+<h2>Faqat bosh kanal uchun postlar</h2>
+<div class="muted">Matnida shu so'zlardan biri bo'lgan post (masalan, vakansiya) filial kanallariga umuman chiqmaydi va hech kimdan so'ralmaydi.</div>
+<form method="post" action="/rules/ask-words">
+<input type="hidden" name="kind" value="skip_words">
+<label for="swords">So'zlar</label>
+<div class="row"><input id="swords" name="words" type="text" value="{{ skip_words }}" style="flex:1 1 260px">
+<button class="btn primary" type="submit">Saqlash</button></div>
+</form>
+</section>
+<section class="card">
 <h2>Tasdiq talab qiladigan so'zlar</h2>
 <div class="muted">Post matnida shu so'zlardan biri uchrasa, u avtomatik chiqmaydi — sizdan so'raladi. AI ishlasa ham, ishlamasa ham amal qiladi. So'zlarni vergul bilan ajrating; katta-kichik harf farq qilmaydi.</div>
 <form method="post" action="/rules/ask-words">
 <label for="words">So'zlar</label>
-<div class="row"><input id="words" name="words" type="text" value="{{ ask_words }}" style="flex:1 1 260px" placeholder="вакансия, ариза юбориш">
+<div class="row"><input id="words" name="words" type="text" value="{{ ask_words }}" style="flex:1 1 260px" placeholder="masalan: tanlov, konkurs">
 <button class="btn primary" type="submit">Saqlash</button></div>
 </form>
 <div class="muted">Bundan tashqari, postda biror shahar nomi «do'kon» yoki «filial» so'zi bilan bitta qatorda kelsa (masalan «Намангандаги дўконимиз ишламайди») yoki «бош дўкон» tilga olinsa, post faqat o'sha filial kanaliga chiqadi, qolganlari uchun sizdan so'raladi.</div>

@@ -246,7 +246,7 @@ def test_panel_flow():
     # qoidalar
     c.post("/rules", data={"text": "Aksiya postlari tasdiqdan keyin"})
     rules_page = c.get("/rules").text
-    assert "Aksiya postlari" in rules_page and "вакансия" in rules_page
+    assert "Aksiya postlari" in rules_page and "вакансия" in rules_page and "Faqat bosh kanal uchun" in rules_page
     c.post("/rules/ask-words", data={"words": "tanlov ,  konkurs,,"})
     assert 'value="tanlov, konkurs"' in c.get("/rules").text
     assert "тез кунда" in c.get("/rules").text and "жонли" in c.get("/rules").text

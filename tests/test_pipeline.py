@@ -227,13 +227,13 @@ async def scenario(monkeypatch):
     monkeypatch.setattr(ai, "analyze", fake_analyze)
 
     # navbatda qo'lda tuzatish: admin kesish joyi va yakun turini o'zgartiradi
-    store[17] = mk(17, "Diqqat, e'lon\nTafsilot birinchi\nTafsilot ikkinchi\nАриза юбориш\n\n@hilolnashr")
+    store[17] = mk(17, "Diqqat, e'lon\nTafsilot birinchi\nTafsilot ikkinchi\nЖонли эфир\n\n@hilolnashr")
     await p.on_new([store[17]])
     async with Session() as s:
         d17 = (await s.execute(select(Delivery).where(Delivery.target_id == qoqon_id_early).order_by(Delivery.id.desc()))).scalars().first()
         post17, t17 = await s.get(SourcePost, d17.post_id), await s.get(Target, d17.target_id)
     assert d17.status == "pending"
-    assert pipeline.preview_text(post17, t17, d17) == "Diqqat, e'lon\nTafsilot birinchi\nTafsilot ikkinchi\nАриза юбориш\n\n@Hilolnashr_qoqon"
+    assert pipeline.preview_text(post17, t17, d17) == "Diqqat, e'lon\nTafsilot birinchi\nTafsilot ikkinchi\nЖонли эфир\n\n@Hilolnashr_qoqon"
     await p.adjust(d17.id, 2, "none")
     async with Session() as s:
         d17 = await s.get(Delivery, d17.id)
@@ -254,7 +254,7 @@ async def scenario(monkeypatch):
         same = [x for x in (await s.execute(select(SourcePost).where(SourcePost.chat_id == CHAT))).scalars() if 30 in x.msg_ids]
     assert len(same) == 1
     # bitta nusxa uchun "Yuborish" ikki marta bir vaqtda bosilsa — bitta xabar chiqadi
-    store[31] = mk(31, "Tanlov e'loni\nАриза юбориш учун ёзинг\n\n@hilolnashr")
+    store[31] = mk(31, "Tanlov e'loni\nЖонли эфирда ғолиблар\n\n@hilolnashr")
     await p.on_new([store[31]])
     async with Session() as s:
         d31 = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine), Delivery.status == "pending").order_by(Delivery.id.desc()))).scalars().first()
@@ -269,14 +269,15 @@ async def scenario(monkeypatch):
         assert (await s.get(Delivery, stale_id)).status == "rejected"  # yuborilgach eski so'rov navbatdan chiqadi
     assert sorted(results) == [False, True] and len(only(c.sent)) == n + 1
 
-    # tasdiq talab qiladigan so'z: qolipga mos bo'lsa ham so'raladi
-    store[11] = mk(11, "Jamoamizga taklif qilamiz\nАриза юбориш учун профилга ёзинг\n\n@hilolnashr")
-    n = len(only(c.sent))
+    # vakansiya: faqat bosh kanal uchun — filiallarga chiqmaydi va hech kimdan so'ralmaydi
+    store[11] = mk(11, "🟢 Қадоқловчи аёл-қизларни ишга қабул қиламиз!\n📩 Ариза юбориш учун профилга ёзинг\n\n@hilolnashr")
+    n, q = len(only(c.sent)), len(b.msgs)
     await p.on_new([store[11]])
     assert len(only(c.sent)) == n
     async with Session() as s:
-        d11 = (await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()))).scalars().first()
-    assert d11.status == "pending" and "ариза юбориш" in d11.reason
+        d11 = list((await s.execute(select(Delivery).where(Delivery.target_id.in_(mine)).order_by(Delivery.id.desc()).limit(2))).scalars())
+    assert all(d.status == "skipped" and d.reason.startswith("Faqat bosh kanal uchun") for d in d11)
+    assert not any(isinstance(m, tuple) and m[1] in {d.id for d in d11} for m in b.msgs[q:])  # adminga ham kelmadi
 
     # filial tasdig'i: faqat yangi nashr / "tez kunda" posti menejerga boradi
     async with Session() as s:
@@ -417,10 +418,10 @@ def test_rules_real_post_shapes():
 
 
 def test_ask_words():
-    from app.pipeline import DEFAULT_ASK_WORDS, ask_word_in
+    from app.pipeline import DEFAULT_SKIP_WORDS, ask_word_in
 
-    assert ask_word_in("📩Ариза юбориш учун:\n@hilolnashrhr", DEFAULT_ASK_WORDS) == "ариза юбориш"
-    assert ask_word_in("Жума муборак!", DEFAULT_ASK_WORDS) == ""
+    assert ask_word_in("📩Ариза юбориш учун:\n@hilolnashrhr", DEFAULT_SKIP_WORDS) == "ариза юбориш"
+    assert ask_word_in("Жума муборак!", DEFAULT_SKIP_WORDS) == ""
     assert ask_word_in("Вакансия", "") == ""
 
 

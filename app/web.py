@@ -759,18 +759,20 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             row = await s.get(Setting, "ask_words")
             brow = await s.get(Setting, "branch_words")
             erow = await s.get(Setting, "event_words")
-        from .pipeline import DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_EVENT_WORDS
+            srow = await s.get(Setting, "skip_words")
+        from .pipeline import DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_EVENT_WORDS, DEFAULT_SKIP_WORDS
 
         return page(
             request, "rules.html", rules=items, ask_words=row.value if row is not None else DEFAULT_ASK_WORDS,
             branch_words=brow.value if brow is not None else DEFAULT_BRANCH_WORDS,
             event_words=erow.value if erow is not None else DEFAULT_EVENT_WORDS,
+            skip_words=srow.value if srow is not None else DEFAULT_SKIP_WORDS,
             saved=request.session.pop("saved", ""),
         )
 
     @app.post("/rules/ask-words")
     async def ask_words_save(request: Request, words: str = Form(""), kind: str = Form("ask_words")):
-        key = kind if kind in ("ask_words", "branch_words", "event_words") else "ask_words"
+        key = kind if kind in ("ask_words", "branch_words", "event_words", "skip_words") else "ask_words"
         clean = ", ".join(w.strip() for w in words.replace("\n", ",").split(",") if w.strip())
         async with Session() as s:
             row = await s.get(Setting, key)
