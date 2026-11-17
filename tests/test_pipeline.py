@@ -807,3 +807,33 @@ def test_admin_asks_all_managers(monkeypatch):
     assert (asked, without) == (1, 1)
     assert d.status == "pending" and d.reason == "Filial tasdig'i kutilmoqda"  # eski xato nusxa qayta ishlatildi
     assert [m for m in bot.msgs if isinstance(m, tuple) and m[0] == "branch"] == [("branch", ids[2], "am_a")]
+
+
+def test_discount_beats_event_words_and_presentation_is_event(monkeypatch):
+    """Haqiqiy postlar: suhbat munosabati bilan umumiy chegirma — hammaga; taqdimot boshlandi — menejerlardan."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    monkeypatch.setattr(ai, "analyze", fake_analyze)
+    sale = ("🎉 «Тафсири Ҳилол» асари 10% чегирмада!\n\n✨ Бугун лойиҳанинг навбатдаги сонида китоб ҳақида суҳбат бўлиб ўтади.\n\n"
+            "❗ Чегирма фақат бугун барча дўконларимизда амал қилади.\n\n👉 Нархи: 798 000 – 718 000 сўм\n\n📍 Манзилларимиз\n\n"
+            "Сотиб олиш учун:\n✍️ @hilol_reception\n📞 +998712175999\n\n@hilolnashr")
+    show = "📣 «Далоилул хойрот» китобининг тақдимоти бошланди\n\n🌐 YouTube орқали томоша қилинг\n\n@hilolnashr"
+    store, bot = {981: mk(981, sale), 982: mk(982, show)}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add(Target(name="DS", username="ds_1", manager_ids={"7401": "1"}))
+            await s.commit()
+        p = Pipeline(c, "manba", bot, premium=False)
+        await p.on_new([store[981]])
+        await p.on_new([store[982]])
+
+    asyncio.run(run())
+    sent = [x for x in c.sent if x[0] == "ds_1"]
+    assert len(sent) == 1 and "10% чегирмада" in sent[0][1]
+    assert any(m[0] == "branch" and m[2] == "ds_1" for m in bot.msgs if isinstance(m, tuple))

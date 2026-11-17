@@ -53,7 +53,7 @@ DEFAULT_BRANCH_WORDS = "тез кунда, tez kunda, нашрдан чиқди,
 # Suhbat, tadbir, jonli efir: har bir filial menejeri o'z kanaliga joylash-joylamaslikni o'zi hal qiladi
 DEFAULT_EVENT_WORDS = (
     "суҳбат, suhbat, жонли, jonli, эфир, efir, "
-    "тадбир, tadbir, учрашув, uchrashuv, ташриф буюринг, tashrif buyuring"
+    "тадбир, tadbir, учрашув, uchrashuv, ташриф буюринг, tashrif buyuring, тақдимот, taqdimot"
 )
 
 
@@ -353,7 +353,8 @@ class Pipeline:
                 elif scope == "head" and t.mode != "manual" and t.manager_ids:
                     # Bosh do'kon tadbiri/e'loni: filial kanaliga joylashni filial menejeri hal qiladi
                     action, reason, quiet, branch, local = "ask", "Filial tasdig'i kutilmoqda", False, True, "head"
-                elif t.mode != "manual" and action == "send" and ask_word_in(text, event_words):
+                elif (t.mode != "manual" and action == "send" and ask_word_in(text, event_words)
+                      and not fallback.is_discount(text)):  # umumiy chegirma e'loni tadbir so'zidan ustun
                     if t.manager_ids:
                         # Suhbat / jonli efir / tadbir: filial menejeri tasdiqlasa kanalga chiqadi
                         action, reason, quiet, branch, local = "ask", "Filial tasdig'i kutilmoqda", False, True, "event"
