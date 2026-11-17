@@ -88,7 +88,7 @@ EVENT_LABELS = {
     "new_post": "Yangi post", "sent": "Yuborildi", "failed": "Xatolik", "edited": "Tahrir sinxronlandi",
     "deleted": "O'chirish sinxronlandi", "account_started": "Akkaunt ulandi", "account_lost": "Akkaunt uzildi",
     "source_changed": "Manba o'zgartirildi", "ai_failed": "AI ishlamadi (zaxira qoidalar)",
-    "report_sent": "Hisobot yuborildi", "rating_sent": "Reyting yuborildi", "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi", "resend": "Qo'lda yuborildi", "catch_up": "O'tkazib yuborilgan postlar", "admins_changed": "Bot adminlari o'zgartirildi",
+    "report_sent": "Hisobot yuborildi", "rating_sent": "Reyting yuborildi", "paused": "Favqulodda to'xtatildi", "resumed": "Davom ettirildi", "recalled": "Post qaytarib olindi", "resend": "Qo'lda yuborildi", "catch_up": "O'tkazib yuborilgan postlar", "admins_changed": "Bot adminlari o'zgartirildi", "delete_ignored": "Noto'g'ri o'chirish signali e'tiborsiz qoldirildi",
 }
 
 

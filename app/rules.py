@@ -90,24 +90,49 @@ def _kind(line: str) -> str | None:
 
 
 def find_block(text: str) -> tuple[str, int | None]:
-    """Post oxiridagi bosh kanalga tegishli qism: (tur, boshlanish qatori)."""
+    """Post oxiridagi bosh kanalga tegishli qism: (tur, boshlanish qatori).
+
+    Aloqa bloki bilan imzo orasida 3 tagacha oddiy qator bo'lishi mumkin (masalan, tahrirda
+    qo'shilgan "17 ноябрь куни 10% чегирма" eslatmasi) — blok baribir topiladi.
+    """
     lines = text.split("\n")
-    start, kinds = len(lines), []
-    for i in range(len(lines) - 1, 0, -1):  # 0-qator har doim mazmun
-        kind = _kind(lines[i])
-        if kind is None:
-            break
-        start = i
-        kinds.append(kind)
-    while start < len(lines) and not lines[start].strip():
-        start += 1  # blok bo'sh qatordan boshlanmaydi
-    if start >= len(lines):
+    n = len(lines)
+    i, mention = n - 1, False
+    while i > 0 and _kind(lines[i]) in ("blank", "mention"):
+        mention = mention or _kind(lines[i]) == "mention"
+        i -= 1
+    sig_start = i + 1
+    j, notes = i, 0
+    while j > 0 and _kind(lines[j]) != "contact":
+        if _kind(lines[j]) is None:
+            notes += 1
+            if notes > 3:
+                break
+        j -= 1
+    contact_start = None
+    if j > 0 and notes <= 3 and _kind(lines[j]) == "contact":
+        t = j
+        while t > 0 and _kind(lines[t]) in ("contact", "blank", "mention"):
+            if _kind(lines[t]) == "contact":
+                contact_start = t
+            t -= 1
+    if contact_start is not None:
+        return "contact", contact_start
+    while sig_start < n and not lines[sig_start].strip():
+        sig_start += 1
+    if sig_start >= n or not mention:
         return "none", None
-    if "contact" in kinds:
-        return "contact", start
-    if "mention" in kinds:
-        return "signature", start
-    return "none", None
+    return "signature", sig_start
+
+
+def trailing_notes(lines: list[str], cut: int) -> tuple[int, int] | None:
+    """Kesiladigan qismda aloqa blokidan keyin kelgan oddiy qatorlar (saqlanishi kerak): (boshi, oxiri)."""
+    kinds = [_kind(x) for x in lines]
+    contacts = [k for k in range(cut, len(lines)) if kinds[k] == "contact"]
+    if not contacts:
+        return None
+    notes = [k for k in range(contacts[-1] + 1, len(lines)) if kinds[k] is None]
+    return (notes[0], notes[-1] + 1) if notes else None
 
 
 def analyze(text: str, targets: list) -> Analysis:

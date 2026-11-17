@@ -82,9 +82,49 @@ def message_to_template(text: str, entities: list | None) -> str:
     return html.unparse(text or "", entities or []).strip()
 
 
+def remove_lines(text: str, entities: list | None, a: int, b: int):
+    """[a, b) qatorlarini olib tashlaydi; formatlash (entity) offsetlari moslanadi."""
+    lines = text.split("\n")
+    if not 0 <= a < b <= len(lines):
+        return text, [copy.copy(e) for e in (entities or [])]
+    start = utf16_len("\n".join(lines[:a]) + ("\n" if a else ""))
+    removed = utf16_len("\n".join(lines[a:b]) + ("\n" if b < len(lines) else ""))
+    stop = start + removed
+    out = []
+    for e in entities or []:
+        e = copy.copy(e)
+        end = e.offset + e.length
+        if end <= start:
+            out.append(e)
+        elif e.offset >= stop:
+            e.offset -= removed
+            out.append(e)
+        else:  # olib tashlangan qism bilan kesishadi
+            keep = max(0, min(end, start) - e.offset) + max(0, end - max(e.offset, stop))
+            if keep > 0:
+                e.offset = min(e.offset, start)
+                e.length = keep
+                out.append(e)
+    return "\n".join(lines[:a] + lines[b:]), out
+
+
 def build_post(text: str, entities: list | None, cta_start_line: int | None, template_html: str):
-    """Manba matnidan filial uchun tayyor matn: eski aloqa bloki kesiladi, shablon qo'yiladi."""
-    body, ents = cut_from_line(text or "", entities, cta_start_line)
+    """Manba matnidan filial uchun tayyor matn: eski aloqa bloki kesiladi, shablon qo'yiladi.
+
+    Aloqa blokidan keyin kelgan oddiy qatorlar (masalan, tahrirda qo'shilgan chegirma eslatmasi)
+    yo'qolmaydi: ular filial blokidan oldinga o'tkaziladi.
+    """
+    text = text or ""
+    lines = text.split("\n")
+    if cta_start_line is not None and 0 < cta_start_line < len(lines):
+        from .rules import trailing_notes
+
+        notes = trailing_notes(lines, cta_start_line)
+        if notes:
+            ns, ne = notes
+            text, entities = remove_lines(text, entities, cta_start_line, ns)
+            cta_start_line += ne - ns
+    body, ents = cut_from_line(text, entities, cta_start_line)
     return append_template(body, ents, template_html)
 
 

@@ -606,6 +606,20 @@ class Pipeline:
 
     async def on_delete(self, chat_id: int, deleted_ids: list[int]) -> None:
         gone = set(deleted_ids)
+        # Himoya: Telegram ba'zan (tahrir, qayta ulanish paytida) noto'g'ri "o'chirildi" signalini yuboradi.
+        # Filial nusxalari faqat bosh kanalda post haqiqatan yo'qligi tasdiqlansa o'chiriladi.
+        try:
+            still = await self.client.get_messages(self.source, ids=sorted(gone))
+            alive = {m.id for m in (still or []) if m}
+        except Exception as e:
+            log.warning("O'chirishni tekshirib bo'lmadi, nusxalarga tegilmaydi: %s", e)
+            await db_log("delete_ignored", f"ids={sorted(gone)}: tekshirib bo'lmadi ({e})")
+            return
+        if alive:
+            await db_log("delete_ignored", f"ids={sorted(alive)}: bosh kanalda post hali bor, nusxalar o'chirilmadi")
+            gone -= alive
+        if not gone:
+            return
         removed = 0
         async with Session() as s:
             posts = [

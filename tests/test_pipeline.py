@@ -336,6 +336,10 @@ async def scenario(monkeypatch):
 
     # o'chirish
     k = len(only(c.deleted))
+    # bosh kanalda post hali bor: noto'g'ri "o'chirildi" signali nusxalarga tegmaydi
+    await p.on_delete(CHAT, [1, 2])
+    assert len(only(c.deleted)) == k
+    del store[1], store[2]  # endi haqiqatan o'chirildi
     await p.on_delete(CHAT, [1, 2])
     deleted = only(c.deleted)[k:]
     assert len(deleted) == 2 and len(deleted[0][1]) == 2

@@ -104,3 +104,41 @@ def test_message_link_and_premium_emoji_template():
     assert s[custom[0].offset : custom[0].offset + custom[0].length] == add_surrogate("🤙")
     assert s[custom[1].offset : custom[1].offset + custom[1].length] == add_surrogate("📍")
     assert out.startswith("Kitob 📚\n\n🤙 +998-90\n📍 Manzil")
+
+
+EDITED = (
+    "✨ Шайх ҳазратлари вақтни қандай тақсимлаганлар?\n\n"
+    "📚 Тўпламни «Hilol-Nashr» нашриётининг дўконларидан сотиб олишингиз ёки hilol.uz сайтимиздан буюртма беришингиз мумкин. 😊 \n\n"
+    "👉 Нархи: 798 000 сўм\n\n📍 Манзилларимиз\n\n✅ Сайт орқали буюртма бериш\n\nСотиб олиш учун:\n✍️ @hilol_reception\n📞 +998712175999\n\n"
+    "🎉 17 ноябрь куни фақат бир кун «Тафсири Ҳилол» тўпламини 10% чегирма билан сотиб олишингиз мумкин.\n\n@hilolnashr"
+)
+
+
+def test_note_after_contact_block_is_kept():
+    """Haqiqiy tahrirlangan post: aloqa blokidan keyin qo'shilgan chegirma qatori saqlanadi, bosh kanal bloki kesiladi."""
+    from telethon.helpers import add_surrogate
+
+    from app.rules import find_block
+
+    kind, start = find_block(EDITED)
+    assert (kind, EDITED.split("\n")[start]) == ("contact", "📍 Манзилларимиз")
+    note = "🎉 17 ноябрь куни фақат бир кун «Тафсири Ҳилол» тўпламини 10% чегирма билан сотиб олишингиз мумкин."
+    off = len(add_surrogate(EDITED[: EDITED.index(note)]))
+    ents = [MessageEntityBold(offset=off + 2, length=10), MessageEntityBold(offset=0, length=4)]
+    out, oe = build_post(EDITED, ents, start, "Buyurtma berish uchun")
+    assert "Манзилларимиз" not in out and "@hilol_reception" not in out and "+998712175999" not in out and "@hilolnashr" not in out
+    assert out.endswith("👉 Нархи: 798 000 сўм\n\n" + note + "\n\nBuyurtma berish uchun")
+    s = add_surrogate(out)
+    bold = sorted(oe, key=lambda e: e.offset)
+    assert s[bold[1].offset: bold[1].offset + bold[1].length] == add_surrogate(note)[2:12]  # formatlash siljimadi
+    assert bold[0].offset == 0
+
+
+def test_remove_lines_entities():
+    from app.textops import remove_lines
+
+    text, ents = remove_lines("aa\nbb\ncc\ndd", [MessageEntityBold(offset=0, length=2), MessageEntityBold(offset=3, length=2),
+                                                   MessageEntityBold(offset=6, length=5), MessageEntityBold(offset=9, length=2)], 1, 3)
+    assert text == "aa\ndd"
+    spans = sorted((e.offset, e.length) for e in ents)
+    assert spans == [(0, 2), (3, 2), (3, 2)]  # bb o'chdi; "cc\ndd" ning faqat "dd" qismi qoldi
