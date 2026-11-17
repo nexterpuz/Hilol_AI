@@ -568,7 +568,7 @@ class Pipeline:
         await db_log("resend", f"post={post_id} target={target_id}")
         return await self.publish(delivery_id)
 
-    async def ask_managers(self, post_id: int) -> tuple[int, int]:
+    async def ask_managers(self, post_id: int, target_id: int | None = None) -> tuple[int, int]:
         """Admin postni barcha filial menejerlariga tasdiqlash uchun yuboradi.
 
         Post allaqachon chiqqan kanallar o'tkazib yuboriladi. Qaytaradi: (so'ralgan filiallar, menejersiz filiallar).
@@ -578,6 +578,8 @@ class Pipeline:
             if post is None or post.deleted:
                 return 0, 0
             targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
+            if target_id:
+                targets = [t for t in targets if t.id == target_id]  # faqat tanlangan filial (masalan, sinov uchun)
             sent = set((await s.execute(
                 select(Delivery.target_id).where(Delivery.post_id == post_id, Delivery.status == "sent")
             )).scalars())

@@ -798,7 +798,10 @@ def test_admin_asks_all_managers(monkeypatch):
             s.add(failed)
             await s.commit()
             ids = (post.id, a.id, failed.id)
+            b = await s.get(Target, b.id)
         p = Pipeline(c, "manba", bot, premium=False)
+        only_b = await p.ask_managers(ids[0], b.id)  # B ga allaqachon chiqqan: so'rov yo'q
+        assert only_b == (0, 0) and not bot.msgs
         res = await p.ask_managers(ids[0])
         async with Session() as s:
             d = await s.get(Delivery, ids[2])

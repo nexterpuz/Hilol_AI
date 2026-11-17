@@ -391,15 +391,17 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         return _go("/posts")
 
     @app.post("/posts/{post_id}/ask-managers")
-    async def post_ask_managers(request: Request, post_id: int):
+    async def post_ask_managers(request: Request, post_id: int, target_id: int = Form(0)):
         if agent is None or agent.pipeline is None:
             request.session["warning"] = "Telegram akkaunt ulanmagan."
             return _go("/posts")
-        asked, without = await agent.pipeline.ask_managers(post_id)
+        asked, without = await agent.pipeline.ask_managers(post_id, target_id or None)
         note = f"{asked} ta filial menejeriga so'rov yuborildi."
         if without:
             note += f" {without} ta filialda menejer botga bog'lanmagan — ularga yuborilmadi."
-        request.session["saved" if asked else "warning"] = note if asked or without else "Post barcha kanallarga allaqachon chiqqan."
+        request.session["saved" if asked else "warning"] = (
+            note if asked or without else "Post tanlangan kanal(lar)ga allaqachon chiqqan — so'rov yuborilmadi."
+        )
         return _go("/posts")
 
     @app.post("/posts/{post_id}/republish")

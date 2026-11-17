@@ -70,8 +70,8 @@ class FakePipeline:
     async def adjust(self, delivery_id, cut_line, closing):
         self.published.append(("adjust", delivery_id, cut_line, closing))
 
-    async def ask_managers(self, post_id):
-        self.published.append(("ask", post_id))
+    async def ask_managers(self, post_id, target_id=None):
+        self.published.append(("ask", post_id, target_id))
         return 3, 1
 
     async def resend(self, post_id, target_id):
@@ -146,10 +146,11 @@ def test_panel_flow():
     assert "Favqulodda to'xtatish yoqilgan" not in c.get("/").text
     # postni qaytarib olish
     assert "Qaytarib olish" in c.get("/posts").text
-    assert "Kanalga yuborish" in c.get("/posts").text and "Menejerlardan so'rash" in c.get("/posts").text
-    c.post("/posts/1/ask-managers")
+    assert "Kanalga yuborish" in c.get("/posts").text and "Menejerdan so'rash" in c.get("/posts").text
+    c.post("/posts/1/ask-managers", data={"target_id": "0"})
+    c.post("/posts/1/ask-managers", data={"target_id": str(target_id)})
     asked_page = c.get("/posts").text
-    assert ("ask", 1) in pipe.published and "3 ta filial menejeriga" in asked_page and "1 ta filialda menejer" in asked_page
+    assert ("ask", 1, None) in pipe.published and ("ask", 1, target_id) in pipe.published and "3 ta filial menejeriga" in asked_page and "1 ta filialda menejer" in asked_page
     c.post("/posts/1/resend", data={"target_id": str(target_id)})
     assert ("resend", 1, target_id) in pipe.published and "kanaliga yuborildi" in c.get("/posts").text
     c.post("/posts/1/recall")
