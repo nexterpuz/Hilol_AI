@@ -867,3 +867,69 @@ def test_uncertain_posts_go_to_manager_not_admin(monkeypatch):
     assert m.reason == "Filial tasdig'i kutilmoqda" and ("branch", m.id, "un_m") in bot.msgs
     assert not any(isinstance(x, tuple) and x[0] == "ask" and x[1] == m.id for x in bot.msgs)  # adminga kelmadi
     assert n.status == "pending" and any(isinstance(x, tuple) and x[0] == "ask" and x[1] == n.id for x in bot.msgs)
+
+
+def test_split_album_is_sent_whole_once(monkeypatch):
+    """Telegram albomni bo'laklab bersa ham 6 rasm bitta albom bo'lib, bir marta chiqadi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    monkeypatch.setattr(ai, "analyze", fake_analyze)
+    cap = "🎉 «Ал-Камил» дарслиги қайта нашр қилинди\n\n👉 Нархи: 55 000 сўм\n\n📍 Манзилларимиз\n\n@hilolnashr"
+    album = [mk(1001, cap, grouped=88, photo_id=1001)] + [mk(1001 + k, "", grouped=88, photo_id=1001 + k) for k in range(1, 6)]
+    store = {m.id: m for m in album}
+    bot = Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([Target(name="AL-1", username="al_1", manager_ids={"7601": "1"}), Target(name="AL-2", username="al_2")])
+            await s.commit()
+        p = Pipeline(c, "manba", bot, premium=False)
+        await asyncio.gather(p.on_new(album[:1]), p.on_new(album[1:]))  # ikki bo'lak, bir vaqtda
+
+    asyncio.run(run())
+    sent = [x for x in c.sent if x[0].startswith("al_")]
+    assert sorted(x[0] for x in sent) == ["al_1", "al_2"]
+    assert all(isinstance(x[2], list) and len(x[2]) == 6 for x in sent)  # 6 rasm, butun
+    assert not [m for m in bot.msgs if isinstance(m, tuple) and m[2] in ("al_1", "al_2")]  # "matnsiz post" so'rovi yo'q
+
+
+def test_republish_fixes_old_partial_album(monkeypatch):
+    """Eski xato: albomning 1 rasmi chiqqan, bo'lagi alohida post. Qayta yuborish butun albomni chiqaradi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    album = [mk(1101, "Albom matni\n\n@hilolnashr", grouped=99, photo_id=1101)] + [mk(1101 + k, "", grouped=99, photo_id=1101 + k) for k in range(1, 6)]
+    store = {m.id: m for m in album}
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            t = Target(name="RP", username="rp_1")
+            main = SourcePost(chat_id=CHAT, msg_ids=[1101], grouped_id=99, text="Albom matni\n\n@hilolnashr", block_type="signature", cta_start_line=2)
+            part = SourcePost(chat_id=CHAT, msg_ids=[1102, 1103, 1104, 1105, 1106], grouped_id=99, text="")
+            s.add_all([t, main, part])
+            await s.flush()
+            s.add(Delivery(post_id=main.id, target_id=t.id, status="sent", target_msg_ids=[5000]))
+            stray = Delivery(post_id=part.id, target_id=t.id, status="pending", reason="Filial tasdig'i kutilmoqda")
+            s.add(stray)
+            await s.commit()
+            ids = (main.id, stray.id)
+        p = Pipeline(c, "manba", Bot(), premium=False)
+        res = await p.republish(ids[0])
+        stray_ok = await p.publish(ids[1])
+        async with Session() as s:
+            return res, stray_ok, (await s.get(Delivery, ids[1])).status
+
+    (ok, total), stray_ok, stray_status = asyncio.run(run())
+    sent = [x for x in c.sent if x[0] == "rp_1"]
+    assert (ok, total) == (1, 1) and len(sent) == 1 and len(sent[0][2]) == 6
+    assert ("rp_1", [5000]) in c.deleted  # eski 1 rasmli nusxa o'chirildi
+    assert stray_ok is False and stray_status == "rejected"  # bo'lak alohida chiqmaydi

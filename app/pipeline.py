@@ -272,8 +272,22 @@ class Pipeline:
                 await s.rollback()
                 return False
 
+    async def _full_album(self, msgs: list) -> list:
+        """Telegram albomni ba'zan bo'laklab yetkazadi: bosh kanaldan butun albomni olamiz."""
+        gid = msgs[0].grouped_id
+        if gid is None:
+            return msgs
+        lo, hi = min(m.id for m in msgs), max(m.id for m in msgs)
+        try:
+            around = await self.client.get_messages(self.source, ids=list(range(max(1, lo - 10), hi + 11)))
+        except Exception:
+            log.warning("Albomni to'liq olib bo'lmadi", exc_info=True)
+            return msgs
+        full = [m for m in (around or []) if m and m.grouped_id == gid]
+        return sorted(full, key=lambda m: m.id) if len(full) >= len(msgs) else msgs
+
     async def on_new(self, msgs: list) -> None:
-        msgs = sorted(msgs, key=lambda m: m.id)
+        msgs = sorted(await self._full_album(msgs), key=lambda m: m.id)
         ids = [m.id for m in msgs]
         cap = next((m for m in msgs if m.message), msgs[0])
         if not await self._claim(msgs[0].chat_id, ids[0]):
@@ -435,8 +449,32 @@ class Pipeline:
         d, post, target = await self._load(delivery_id)
         if d.status == "sent" or post.deleted:
             return False
+        if post.grouped_id is not None:
+            async with Session() as s:
+                first = (await s.execute(
+                    select(SourcePost.id).where(SourcePost.chat_id == post.chat_id, SourcePost.grouped_id == post.grouped_id)
+                    .order_by(SourcePost.id)
+                )).scalars().first()
+                if first != post.id:
+                    # Albomning bo'lagi alohida post bo'lib qolgan (eski xato): asosiy post bilan birga yuboriladi
+                    await s.execute(
+                        update(Delivery).where(Delivery.post_id == post.id, Delivery.status.in_(("pending", "skipped", "failed")))
+                        .values(status="rejected", reason="Albom bo'lagi — butun albom asosiy post bilan yuboriladi")
+                    )
+                    await s.commit()
+                    return False
         fetched = await self.client.get_messages(self.source, ids=post.msg_ids)
         msgs = [m for m in fetched if m]
+        if post.grouped_id is not None and msgs:
+            full = await self._full_album(msgs)
+            if len(full) > len(msgs):  # avval bo'lagi saqlangan bo'lsa — endi butun albom
+                msgs = full
+                async with Session() as s:
+                    row = await s.get(SourcePost, post.id)
+                    row.msg_ids = [m.id for m in full]
+                    row.media_ids = {str(m.id): media_id(m) for m in full}
+                    await s.commit()
+                post.msg_ids = [m.id for m in full]
         if not msgs:
             await self._fail(delivery_id, target, "Manba post topilmadi")
             return False
@@ -576,6 +614,20 @@ class Pipeline:
         for d in failed:
             ok += await self.resend(post_id, d.target_id)
         return ok, len(failed)
+
+    async def republish(self, post_id: int) -> tuple[int, int]:
+        """Postni chiqqan barcha kanallardan olib, qaytadan (to'liq holda) yuboradi."""
+        async with Session() as s:
+            targets = list(set((await s.execute(
+                select(Delivery.target_id).where(Delivery.post_id == post_id, Delivery.status == "sent")
+            )).scalars()))
+        if not targets:
+            return 0, 0
+        await self.recall(post_id)
+        ok = 0
+        for tid in targets:
+            ok += await self.resend(post_id, tid)
+        return ok, len(targets)
 
     async def recall(self, post_id: int) -> int:
         """Postni barcha filial kanallaridan o'chiradi (bosh kanalga tegmaydi). Qaytaradi: nechta kanaldan."""

@@ -402,6 +402,17 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         request.session["saved" if asked else "warning"] = note if asked or without else "Post barcha kanallarga allaqachon chiqqan."
         return _go("/posts")
 
+    @app.post("/posts/{post_id}/republish")
+    async def post_republish(request: Request, post_id: int):
+        if agent is None or agent.pipeline is None:
+            request.session["warning"] = "Telegram akkaunt ulanmagan."
+        else:
+            ok, total = await agent.pipeline.republish(post_id)
+            request.session["saved" if ok == total and total else "warning"] = (
+                f"Post {total} ta kanaldan olinib, {ok} tasiga qaytadan yuborildi." if total else "Post hech bir kanalga chiqmagan."
+            )
+        return _go("/posts")
+
     @app.post("/posts/{post_id}/retry")
     async def post_retry(request: Request, post_id: int):
         if agent is None or agent.pipeline is None:
