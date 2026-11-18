@@ -60,6 +60,7 @@ class Target(Base):
     sync_edits: Mapped[bool] = mapped_column(Boolean, default=True)
     sync_deletes: Mapped[bool] = mapped_column(Boolean, default=True)
     silent: Mapped[bool] = mapped_column(Boolean, default=False)
+    latin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")  # postlar lotin yozuvida
 
 
 class Rule(Base):
@@ -179,7 +180,7 @@ def _migrate(conn) -> None:
         "deliveries": {"cut_line": "INTEGER", "closing": "VARCHAR(10)"},
         "targets": {
             "signature_html": "TEXT DEFAULT '' NOT NULL", "manager_phones": "TEXT DEFAULT '' NOT NULL",
-            "manager_ids": "JSON", "manager_seen": "JSON", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",
+            "manager_ids": "JSON", "manager_seen": "JSON", "latin": "BOOLEAN DEFAULT FALSE NOT NULL", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",
         },
     }
     inspector = inspect(conn)

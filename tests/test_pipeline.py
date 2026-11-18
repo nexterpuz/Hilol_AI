@@ -953,3 +953,29 @@ def test_city_name_inside_other_words_is_not_branch_post():
     assert ask_word_in(report, DEFAULT_SKIP_WORDS)  # o'tgan tadbir hisoboti — faqat bosh kanal uchun
     closed = fallback.analyze("Термиздаги дўконимиз бугун ишламайди\n\n@hilolnashr", targets)
     assert closed.for_target(1).scope == "own" and closed.for_target(2).scope == "other"
+
+
+def test_latin_channel_gets_transliterated_post(monkeypatch):
+    """Lotin sozlamasi yoqilgan kanalga post lotin yozuvida, boshqasiga kirillda chiqadi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    monkeypatch.setattr(ai, "analyze", fake_analyze)
+    text = "✨ Кунни Қуръон билан бошланг\n👉 Нархи: 78 000 сўм\nManzillarimiz\n@hilolnashr"
+    store = {1201: mk(1201, text, photo_id=1201)}
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([Target(name="LT", username="lt_lat", latin=True, template_html="Буюртма учун: +998 90 000 00 00"),
+                       Target(name="CY", username="lt_cyr", template_html="Буюртма учун: +998 90 000 00 00")])
+            await s.commit()
+        await Pipeline(c, "manba", Bot(), premium=False).on_new([store[1201]])
+
+    asyncio.run(run())
+    out = {x[0]: x[1] for x in c.sent if x[0].startswith("lt_")}
+    assert out["lt_lat"] == "✨ Kunni Qurʼon bilan boshlang\n👉 Narxi: 78 000 soʻm\n\nBuyurtma uchun: +998 90 000 00 00"
+    assert out["lt_cyr"].startswith("✨ Кунни Қуръон") and "Буюртма учун" in out["lt_cyr"]

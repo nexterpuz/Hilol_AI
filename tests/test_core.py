@@ -142,3 +142,41 @@ def test_remove_lines_entities():
     assert text == "aa\ndd"
     spans = sorted((e.offset, e.length) for e in ents)
     assert spans == [(0, 2), (3, 2), (3, 2)]  # bb o'chdi; "cc\ndd" ning faqat "dd" qismi qoldi
+
+
+def test_to_latin_uzbek():
+    from app.textops import to_latin
+
+    cases = {
+        "Шайх ҳазратлари вақтни қандай тақсимлаганлар?": "Shayx hazratlari vaqtni qanday taqsimlaganlar?",
+        "Нархи: 798 000 сўм": "Narxi: 798 000 soʻm",
+        "Ёзилган китоб": "Yozilgan kitob",
+        "Ер юзи, мевалар, ҳаёт": "Yer yuzi, mevalar, hayot",
+        "Қўқондаги дўконимиз": "Qoʻqondagi doʻkonimiz",
+        "Ўзбекистон бўйлаб етказиб берилади": "Oʻzbekiston boʻylab yetkazib beriladi",
+        "маълумот, Ғайрат": "maʼlumot, Gʻayrat",
+        "ДЎКОН ВА ШАЙХ": "DOʻKON VA SHAYX",
+        "Цирк ва федерация": "Sirk va federatsiya",
+        "Already latin: Qoʻqon @hilol_reception": "Already latin: Qoʻqon @hilol_reception",
+    }
+    for cyr, lat in cases.items():
+        assert to_latin(cyr, [])[0] == lat, (cyr, to_latin(cyr, [])[0])
+
+
+def test_to_latin_keeps_entities():
+    from telethon.helpers import add_surrogate
+
+    from app.textops import to_latin
+
+    text = "👉 Нархи: 78 000 сўм\nСайт: https://hilol.uz/шоп"
+    s = add_surrogate(text)
+    bold = MessageEntityBold(offset=s.index("Нархи"), length=5)
+    from telethon.tl.types import MessageEntityUrl
+
+    url = MessageEntityUrl(offset=s.index("https"), length=len(s) - s.index("https"))
+    out, ents = to_latin(text, [bold, url])
+    o = add_surrogate(out)
+    b, u = sorted(ents, key=lambda e: e.offset)
+    assert out.startswith("👉 Narxi: 78 000 soʻm\nSayt: ")
+    assert o[b.offset:b.offset + b.length] == "Narxi"
+    assert o[u.offset:u.offset + u.length] == "https://hilol.uz/шоп"  # havolaga tegilmaydi

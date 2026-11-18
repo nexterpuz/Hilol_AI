@@ -144,3 +144,70 @@ __all__ = [
     "build_post",
     "fits",
 ]
+
+
+# ---------- O'zbek kirill → lotin (rasmiy alifbo) ----------
+
+_CYR = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "ж": "j", "з": "z", "и": "i", "й": "y", "к": "k",
+    "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f",
+    "х": "x", "ч": "ch", "ш": "sh", "щ": "sh", "ъ": "\u02bc", "ы": "i", "ь": "", "э": "e", "ю": "yu",
+    "я": "ya", "ё": "yo", "ў": "o\u02bb", "қ": "q", "ғ": "g\u02bb", "ҳ": "h",
+}
+_VOWELS = set("аеёиоуэюяў")
+_KEEP = ("MessageEntityCode", "MessageEntityPre", "MessageEntityUrl", "MessageEntityEmail", "MessageEntityMention")
+
+
+def _is_upper_word(s: str, i: int) -> bool:
+    """Harf butunlay katta harfli so'z ichidami (ШАЙХ → SHAYX, Шайх → Shayx)."""
+    for j in (i + 1, i - 1):
+        if 0 <= j < len(s) and s[j].isalpha():
+            return s[j].isupper()
+    return False
+
+
+def _latin_char(s: str, i: int) -> str:
+    ch = s[i]
+    low = ch.lower()
+    if low == "е":
+        prev = s[i - 1].lower() if i else ""
+        rep = "ye" if (not prev.isalpha() or prev in _VOWELS or prev in "ъь") else "e"
+    elif low == "ц":
+        prev = s[i - 1].lower() if i else ""
+        rep = "ts" if prev in _VOWELS else "s"
+    elif low in _CYR:
+        rep = _CYR[low]
+    else:
+        return ch
+    if ch != low and rep:  # katta harf
+        if _is_upper_word(s, i):
+            return rep.upper()
+        return rep[0].upper() + rep[1:]
+    return rep
+
+
+def to_latin(text: str, entities: list | None):
+    """Matnni lotin yozuviga o'giradi; formatlash (entity) offsetlari moslanadi.
+
+    Havola, kod, @username kabi qismlarga tegilmaydi. Lotin matn o'zgarmaydi.
+    """
+    s = add_surrogate(text or "")
+    keep = set()
+    for e in entities or []:
+        if type(e).__name__ in _KEEP:
+            keep.update(range(e.offset, e.offset + e.length))
+    out, pos, mp = [], 0, [0] * (len(s) + 1)
+    for i in range(len(s)):
+        mp[i] = pos
+        piece = s[i] if i in keep else _latin_char(s, i)
+        out.append(piece)
+        pos += len(piece)
+    mp[len(s)] = pos
+    new = []
+    for e in entities or []:
+        e = copy.copy(e)
+        start, end = mp[min(e.offset, len(s))], mp[min(e.offset + e.length, len(s))]
+        e.offset, e.length = start, end - start
+        if e.length > 0:
+            new.append(e)
+    return del_surrogate("".join(out)), new
