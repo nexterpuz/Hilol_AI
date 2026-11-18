@@ -981,3 +981,15 @@ def test_latin_channel_gets_transliterated_post(monkeypatch):
     assert out["lt_lat"] == "✨ Kunni Qurʼon bilan boshlang\n👉 Narxi: 78 000 soʻm\n\nBuyurtma uchun: +998 90 000 00 00"
     assert out["lt_cyr"].startswith("✨ Кунни Қуръон") and "Буюртма учун" in out["lt_cyr"]
     assert out["lt_new"] == "✨ Kunni Qurʼon bilan boşlang\n👉 Narxi: 78 000 söm\n\nBuyurtma uçun: +998 90 000 00 00"
+
+
+def test_soon_word_needs_sale_context():
+    """Haqiqiy post: sotuvdagi kitoblar ro'yxati, oxirida "Тез кунда ... нашр қилинади" — menejerni kutmaydi."""
+    from app.pipeline import DEFAULT_BRANCH_WORDS, branch_word_in
+
+    real = ("📚 Илмга чанқоқ талабалар учун устоз Ҳасанхон Яҳё Абдулмажид китоблари\n\n1. «Мавлид» – 50 000 сўм\n\n"
+            "📍 Манзилларимиз\n\nСотиб олиш учун:\n✍️ @hilol_reception\n📞 +998712175999\n\n"
+            "*Янгилик! Тез кунда устознинг иккита китоблари нашр қилинади. Саҳифамиздан узоқлашманг\n\n@hilolnashr")
+    assert branch_word_in(real, DEFAULT_BRANCH_WORDS) == ""
+    assert branch_word_in("Китоб тез кунда барча филиалларимизда сотувда бўлади", DEFAULT_BRANCH_WORDS) == "тез кунда"
+    assert branch_word_in("«10 дақиқалик амаллар» китоби нашр қилинди", DEFAULT_BRANCH_WORDS) == "нашр қилинди"

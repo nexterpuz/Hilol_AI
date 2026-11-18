@@ -132,6 +132,23 @@ async def set_paused(flag: bool) -> None:
     await db_log("paused" if flag else "resumed", "")
 
 
+_SOON = ("тез кунда", "tez kunda")
+_SALE_CONTEXT = ("сотув", "sotuv", "филиал", "filial", "дўкон", "do'kon", "doʻkon", "dokon", "дўкон")
+
+
+def branch_word_in(text: str, words: str) -> str:
+    """Filial tasdig'i so'zi. "Тез кунда" faqat sotuv/filial/do'kon haqidagi qatorda hisoblanadi:
+    "Тез кунда барча филиалларимизда сотувда" — ha; "Тез кунда иккита китоб нашр қилинади" — yo'q."""
+    for line in (text or "").lower().split("\n"):
+        w = ask_word_in(line, words)
+        if not w:
+            continue
+        if any(w.startswith(soon) for soon in _SOON) and not any(c in line for c in _SALE_CONTEXT):
+            continue
+        return w
+    return ""
+
+
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
@@ -384,7 +401,7 @@ class Pipeline:
                         action, reason, quiet, branch, local = "ask", "Filial tasdig'i kutilmoqda", False, True, "event"
                     else:
                         action, reason = "ask", "Tadbir/efir posti: filial menejeri botga bog'lanmagan"
-                elif t.branch_approval and action == "send" and ask_word_in(text, branch_words):
+                elif t.branch_approval and action == "send" and branch_word_in(text, branch_words):
                     # Yangi nashr yoki "tez kunda": kitob filialga kelgach, menejer o'zi tasdiqlaydi
                     action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True
                 skip_word = ask_word_in(text, skip_words)
