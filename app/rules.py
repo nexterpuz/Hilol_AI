@@ -10,13 +10,19 @@ import re
 
 from .ai import Analysis, TargetDecision
 
+# Faqat bosh kanalning O'Z aloqa ma'lumotlari. Boshqa tashkilotlarning telefoni va havolalari
+# (masalan, hamkor madrasa e'lonidagi) post mazmuni hisoblanadi va kesilmaydi.
 CONTACT_MARKERS = (
-    "манзилларимиз", "манзил", "сотиб олиш учун", "сотиб олсангиз", "сайт орқали", "буюртма",
-    "иловаси орқали", "бонус", "manzillarimiz", "manzil", "sotib olish uchun", "sotib olsangiz",
-    "sayt orqali", "buyurtma", "ilovasi orqali", "bonus",
+    "манзилларимиз", "сотиб олиш учун", "сотиб олсангиз", "сайт орқали", "буюртма",
+    "иловаси орқали", "бонус", "manzillarimiz", "sotib olish uchun", "sotib olsangiz",
+    "sayt orqali", "buyurtma", "ilovasi orqali", "bonus", "hilol_reception", "hilol.uz",
 )
-PHONE = re.compile(r"\+?\s?998[\d\s\-()]{9,}")
-URL = re.compile(r"https?://|t\.me/|www\.", re.I)
+BOSH_PHONES = ("712175999",)  # bosh kanal telefon(lar)i, raqamlar ketma-ketligi
+
+
+def _bosh_phone(line: str) -> bool:
+    digits = re.sub(r"\D", "", line)
+    return any(p in digits for p in BOSH_PHONES)
 MENTION_ONLY = re.compile(r"^[\W_]*(@\w+[\W_]*)+$")
 
 
@@ -84,7 +90,7 @@ def _kind(line: str) -> str | None:
     if MENTION_ONLY.match(stripped):
         return "mention"
     low = stripped.lower()
-    if PHONE.search(stripped) or URL.search(stripped) or any(m in low for m in CONTACT_MARKERS):
+    if _bosh_phone(stripped) or any(m in low for m in CONTACT_MARKERS):
         return "contact"
     return None
 

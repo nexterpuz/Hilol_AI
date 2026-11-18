@@ -993,3 +993,48 @@ def test_soon_word_needs_sale_context():
     assert branch_word_in(real, DEFAULT_BRANCH_WORDS) == ""
     assert branch_word_in("Китоб тез кунда барча филиалларимизда сотувда бўлади", DEFAULT_BRANCH_WORDS) == "тез кунда"
     assert branch_word_in("«10 дақиқалик амаллар» китоби нашр қилинди", DEFAULT_BRANCH_WORDS) == "нашр қилинди"
+
+
+def test_branch_event_goes_only_to_that_branch_without_asking(monkeypatch):
+    """Haqiqiy e'lon: "Бухоро вилояти филиали билан ҳамкорликда ... ярмаркаси", ichida "Тадбир" so'zi.
+    Buxoroga so'ramasdan chiqadi, qolganlariga chiqmaydi va hech kimdan so'ralmaydi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    async def no_ai(*a, **k):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    text = ("📘 КИТОБ ЯРМАРКАСИ\n\n📅 24 ноябрь куни Мир Араб олий мадрасасида «Hilol Nashr» нашриёт-матбаасининг "
+            "Бухоро вилояти филиали билан ҳамкорликда КИТОБЛАР САВДО ЯРМАРКАСИ бўлиб ўтади.\n\n"
+            "📍 Манзил: Бухоро шаҳри, Абу Ҳафс Кабир кўчаси, 3-уй.\n\n📋 Тадбир меҳмони Қамариддин Бекмуҳаммад")
+    store, bot = {1301: mk(1301, text, photo_id=1301)}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([Target(name="Hilol Nashr | Buxoro", username="bx_b", keywords="Buxoro", manager_ids={"7701": "1"}),
+                       Target(name="Hilol Nashr | Qo'qon", username="bx_q", keywords="Qo'qon", manager_ids={"7702": "1"}),
+                       Target(name="Hilol Nashr | Jizzax", username="bx_j", keywords="Jizzax")])
+            await s.commit()
+        await Pipeline(c, "manba", bot, premium=True).on_new([store[1301]])
+
+    asyncio.run(run())
+    assert [x[0] for x in c.sent if x[0].startswith("bx_")] == ["bx_b"]
+    assert not [m for m in bot.msgs if isinstance(m, tuple) and str(m[2]).startswith("bx_")]  # hech kimdan so'ralmadi
+
+
+def test_partner_contacts_are_not_cut():
+    """Hamkor tashkilot (Mir Arab) e'lonidagi telefon va havolalar kesilmaydi; bosh kanal kontaktlari kesiladi."""
+    from app.textops import build_post
+
+    partner = ("📘 КИТОБ ЯРМАРКАСИ\n\nҚўшимча саволлар учун:\n🟢 +99897 307 03-45\nрақами билан боғланишингиз мумкин.\n\n"
+               "🍃 Дўстларингизга ҳам улашинг!!!\n✈️ https://t.me/Mirarabuz\n\n🔄 Бизни ижтимоий тармоқларда кузатинг\n🌐 mirarab.uz | 📷 instagram")
+    kind, cut = fallback.find_block(partner)
+    out = build_post(partner, [], cut, "[BUXORO]")[0]
+    assert "+99897 307 03-45" in out and "https://t.me/Mirarabuz" in out and out.endswith("instagram\n\n[BUXORO]")
+    own = "Китоб\n\n👉 Нархи: 42 000 сўм\n\n📍 Манзилларимиз\n\nСотиб олиш учун:\n✍️ @hilol_reception\n📞 +998712175999\n\n@hilolnashr"
+    assert fallback.find_block(own) == ("contact", 4)  # "📍 Манзилларимиз" qatoridan

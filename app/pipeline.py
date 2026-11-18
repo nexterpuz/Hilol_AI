@@ -391,6 +391,8 @@ class Pipeline:
                     # Boshqa filialning e'loni: bu kanalga chiqmaydi va hech kimdan so'ralmaydi.
                     # (O'z filialiga tegishli post — scope "own" — odatdagidek avtomatik chiqadi.)
                     action, reason, quiet = "skip", "Post boshqa filialga tegishli", True
+                elif scope == "own" and t.mode != "manual":
+                    pass  # aynan shu filialga tegishli e'lon: tadbir so'zi bo'lsa ham so'ramasdan chiqadi
                 elif scope == "head" and t.mode != "manual" and t.manager_ids:
                     # Bosh do'kon tadbiri/e'loni: filial kanaliga joylashni filial menejeri hal qiladi
                     action, reason, quiet, branch, local = "ask", "Filial tasdig'i kutilmoqda", False, True, "head"
