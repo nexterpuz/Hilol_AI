@@ -163,6 +163,8 @@ def similar(a: str, b: str) -> bool:
 
 def final_parts(post, target, delivery=None) -> tuple[int | None, str]:
     """Kesish qatori va qo'yiladigan yakun: admin navbatda tuzatgan bo'lsa — o'sha, aks holda tahlil natijasi."""
+    if getattr(target, "mirror", False):
+        return None, ""  # to'liq nusxa: hech narsa kesilmaydi va qo'shilmaydi
     cut, kind = post.cta_start_line, post.block_type
     if delivery is not None and delivery.cut_line is not None:
         cut = None if delivery.cut_line < 0 else delivery.cut_line
@@ -410,6 +412,9 @@ class Pipeline:
                 if skip_word:
                     # Faqat bosh kanal uchun (masalan, vakansiya): filialga chiqmaydi, so'ralmaydi
                     action, reason, quiet, branch, local = "skip", f"Faqat bosh kanal uchun («{skip_word}»)", True, False, False
+                if t.mirror:
+                    # To'liq nusxa kanali: har bir post filtrsiz va so'rovsiz
+                    action, reason, quiet, branch, local = "send", "To'liq nusxa kanali", True, False, False
                 if paused and action != "skip":
                     action, reason, quiet, branch, local = "ask", "Favqulodda to'xtatish yoqilgan", True, False, False
                 if not all(is_supported(m) for m in msgs):
@@ -743,7 +748,10 @@ class Pipeline:
             if not target.sync_edits or idx >= len(d.target_msg_ids) or not d.target_msg_ids[idx]:
                 continue
             if is_caption_msg:
-                text, ents = build_post(msg.message or "", msg.entities, post.cta_start_line, closing_for(target, post.block_type))
+                if target.mirror:
+                    text, ents = build_post(msg.message or "", msg.entities, None, "")
+                else:
+                    text, ents = build_post(msg.message or "", msg.entities, post.cta_start_line, closing_for(target, post.block_type))
                 if target.latin:
                     text, ents = to_latin(text, ents, target.latin_style or "new")
             else:

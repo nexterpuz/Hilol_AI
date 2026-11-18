@@ -170,6 +170,7 @@ async def compare_data(days: int) -> dict:
         start = subs - growth if subs is not None and growth is not None else None
         channels.append({
             "id": r["t"].id, "name": r["t"].name, "active": r["t"].active, "subs": subs, "growth": growth,
+            "mirror": bool(getattr(r["t"], "mirror", False)),
             "growth_pct": round(100 * growth / start, 1) if start else None,
             "posts": r["posts"], "views": r["views"], "reach": r["reach"],
         })
@@ -520,7 +521,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         name: str = Form(...), username: str = Form(...), mode: str = Form("smart"),
         template_html: str = Form(""), signature_html: str = Form(""), keywords: str = Form(""),
         sync_edits: str = Form(""), sync_deletes: str = Form(""), silent: str = Form(""),
-        manager_phones: str = Form(""), branch_approval: str = Form(""), script: str = Form("cyr"),
+        manager_phones: str = Form(""), branch_approval: str = Form(""), script: str = Form("cyr"), mirror: str = Form(""),
     ):
         username = username.strip().removeprefix("https://t.me/").lstrip("@")
         async with Session() as s:
@@ -538,6 +539,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             target.keywords = keywords.strip()
             target.sync_edits, target.sync_deletes, target.silent = bool(sync_edits), bool(sync_deletes), bool(silent)
             target.manager_phones, target.branch_approval = manager_phones.strip(), bool(branch_approval)
+            target.mirror = bool(mirror)
             target.latin = script in ("new", "old")
             if target.latin:
                 target.latin_style = script

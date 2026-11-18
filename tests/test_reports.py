@@ -468,3 +468,15 @@ def test_stats_failure_is_logged_once():
 
     rows = asyncio.run(run())
     assert len(rows) == 1 and "CHANNEL_PRIVATE" in rows[0]
+
+
+def test_mirror_channel_not_in_ranking(monkeypatch):
+    import app.web as web
+
+    async def fake_compare(days):
+        return {"channels": [{"id": 1, "name": "A", "active": True, "reach": 40, "growth_pct": 0},
+                             {"id": 2, "name": "Lotin", "active": True, "reach": 90, "growth_pct": 0, "mirror": True}]}
+
+    monkeypatch.setattr(web, "compare_data", fake_compare)
+    rk = asyncio.run(reports.ranking())
+    assert rk["total"] == 1 and list(rk["ranks"]) == [1]

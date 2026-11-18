@@ -1038,3 +1038,46 @@ def test_partner_contacts_are_not_cut():
     assert "+99897 307 03-45" in out and "https://t.me/Mirarabuz" in out and out.endswith("instagram\n\n[BUXORO]")
     own = "Китоб\n\n👉 Нархи: 42 000 сўм\n\n📍 Манзилларимиз\n\nСотиб олиш учун:\n✍️ @hilol_reception\n📞 +998712175999\n\n@hilolnashr"
     assert fallback.find_block(own) == ("contact", 4)  # "📍 Манзилларимиз" qatoridan
+
+
+def test_mirror_channel_gets_every_post_unchanged_in_latin(monkeypatch):
+    """To'liq nusxa kanali: vakansiya, filial e'loni, sotuv — hammasi kesilmasdan, yangi lotin alifbosida; tahrir ham."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    async def no_ai(*a, **k):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    sale = "✨ Шайх ҳазратлари ҳақида\n\n👉 Нархи: 42 000 сўм\n\n📍 Манзилларимиз\n\nСотиб олиш учун:\n✍️ @hilol_reception\n📞 +998712175999\n\n@hilolnashr"
+    vacancy = "🟢 Ходимларни ишга қабул қиламиз!\n📩 Ариза юбориш учун ёзинг\n\n@hilolnashr"
+    local = "✨ Бугун Қўқондаги дўконимиз ишламайди\n\n@hilolnashr"
+    store = {1401: mk(1401, sale, photo_id=1401), 1402: mk(1402, vacancy), 1403: mk(1403, local)}
+    bot = Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([Target(name="Hilol Nashr (lotin)", username="mr_lat", mirror=True, latin=True, latin_style="new",
+                              template_html="BU QO'SHILMASLIGI KERAK", manager_ids={"7801": "1"}),
+                       Target(name="Qo'qon", username="mr_q", keywords="Qo'qon", template_html="Qo'qon bloki")])
+            await s.commit()
+        p = Pipeline(c, "manba", bot, premium=True)
+        for i in (1401, 1402, 1403):
+            await p.on_new([store[i]])
+        store[1401] = mk(1401, sale.replace("42 000", "39 000"), photo_id=1401)
+        await p.on_edit(store[1401])
+
+    asyncio.run(run())
+    mirror = [x[1] for x in c.sent if x[0] == "mr_lat"]
+    assert len(mirror) == 3
+    assert mirror[0] == ("✨ Şayx hazratlari haqida\n\n👉 Narxi: 42 000 söm\n\n📍 Manzillarimiz\n\nSotib oliş uçun:\n"
+                         "✍️ @hilol_reception\n📞 +998712175999\n\n@hilolnashr")
+    assert mirror[1].startswith("🟢 Xodimlarni işga qabul qilamiz!") and mirror[2].startswith("✨ Bugun Qöqondagi dökonimiz")
+    assert not any("QO'SHILMASLIGI" in m for m in mirror)
+    assert not [m for m in bot.msgs if isinstance(m, tuple) and m[2] == "mr_lat"]  # hech kimdan so'ralmadi
+    edit = [e for e in c.edits if e[0] == "mr_lat"]
+    assert len(edit) == 1 and "39 000 söm" in edit[0][2] and "@hilol_reception" in edit[0][2]

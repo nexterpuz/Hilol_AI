@@ -292,7 +292,7 @@ async def ranking() -> dict:
     from .web import compare_data
 
     data = await compare_data(7)
-    active = [c for c in data["channels"] if c["active"]]
+    active = [c for c in data["channels"] if c["active"] and not c.get("mirror")]
     rated = [c for c in active if c["reach"] is not None]
     rated.sort(key=lambda c: (c["reach"], c["growth_pct"] or 0), reverse=True)
     average = sum(c["reach"] for c in rated) / len(rated) if rated else 0

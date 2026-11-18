@@ -61,6 +61,8 @@ class Target(Base):
     sync_deletes: Mapped[bool] = mapped_column(Boolean, default=True)
     silent: Mapped[bool] = mapped_column(Boolean, default=False)
     latin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")  # postlar lotin yozuvida
+    # To'liq nusxa (masalan, "Hilol Nashr (lotin)"): har bir post o'zgarishsiz, filtr va so'rovsiz
+    mirror: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     latin_style: Mapped[str] = mapped_column(String(5), default="new", server_default="new")  # new: ö ğ ş ç; old: oʻ gʻ sh ch
 
 
@@ -181,7 +183,7 @@ def _migrate(conn) -> None:
         "deliveries": {"cut_line": "INTEGER", "closing": "VARCHAR(10)"},
         "targets": {
             "signature_html": "TEXT DEFAULT '' NOT NULL", "manager_phones": "TEXT DEFAULT '' NOT NULL",
-            "manager_ids": "JSON", "manager_seen": "JSON", "latin": "BOOLEAN DEFAULT FALSE NOT NULL", "latin_style": "VARCHAR(5) DEFAULT 'new' NOT NULL", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",
+            "manager_ids": "JSON", "manager_seen": "JSON", "latin": "BOOLEAN DEFAULT FALSE NOT NULL", "latin_style": "VARCHAR(5) DEFAULT 'new' NOT NULL", "mirror": "BOOLEAN DEFAULT FALSE NOT NULL", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",
         },
     }
     inspector = inspect(conn)
