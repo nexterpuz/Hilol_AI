@@ -221,3 +221,22 @@ def test_tricky_letters_official_rules():
              "ноябрь": "noyabr", "фильмни": "filmni", "Айюбхон": "Ayyubxon", "истиъоза": "istiʼoza"}
     for cyr, lat in cases.items():
         assert to_latin(cyr, [])[0] == lat, (cyr, to_latin(cyr, [])[0])
+
+
+def test_replace_handle():
+    from telethon.helpers import add_surrogate
+    from telethon.tl.types import MessageEntityMention
+
+    from app.textops import replace_handle
+
+    text = "✨ Hazrat\n✍️ @hilol_reception\n@hilolnashr_qoqon\n\n@hilolnashr"
+    s = add_surrogate(text)
+    m = MessageEntityMention(offset=s.rindex("@hilolnashr"), length=len("@hilolnashr"))
+    bold = MessageEntityBold(offset=0, length=len(add_surrogate("✨ Hazrat")))
+    out, ents = replace_handle(text, [bold, m], "hilolnashr", "@hilolnashr_uz")
+    assert out == "✨ Hazrat\n✍️ @hilol_reception\n@hilolnashr_qoqon\n\n@hilolnashr_uz"
+    o = add_surrogate(out)
+    b, mm = sorted(ents, key=lambda e: e.offset)
+    assert o[b.offset:b.offset + b.length] == add_surrogate("✨ Hazrat")
+    assert o[mm.offset:mm.offset + mm.length] == "@hilolnashr_uz"
+    assert replace_handle("Matn @HilolNashr.", [], "hilolnashr", "hilolnashr_uz")[0] == "Matn @hilolnashr_uz."

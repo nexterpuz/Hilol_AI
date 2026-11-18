@@ -1081,3 +1081,31 @@ def test_mirror_channel_gets_every_post_unchanged_in_latin(monkeypatch):
     assert not [m for m in bot.msgs if isinstance(m, tuple) and m[2] == "mr_lat"]  # hech kimdan so'ralmadi
     edit = [e for e in c.edits if e[0] == "mr_lat"]
     assert len(edit) == 1 and "39 000 söm" in edit[0][2] and "@hilol_reception" in edit[0][2]
+
+
+def test_mirror_channel_replaces_only_main_handle(monkeypatch):
+    """Haqiqiy post: to'liq nusxa kanalida faqat @hilolnashr → @hilolnashr_uz, qolgani o'zgarmaydi (lotin)."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    async def no_ai(*a, **k):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    text = "✨ Ҳазрат илм аҳлига юксак ҳурмат кўрсатганлар\n\nАбдуҳаким домла Матқулов\n\n✅ «Ҳазратни хотирлаб» кўрсатувининг 12 сонидан\n\n@hilolnashr"
+    store = {1501: mk(1501, text, photo_id=1501)}
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add(Target(name="Hilol Nashr (lotin)", username="mh_lat", mirror=True, latin=True, latin_style="new", signature_html="@hilolnashr_uz"))
+            await s.commit()
+        await Pipeline(c, "manba", Bot(), premium=True).on_new([store[1501]])
+
+    asyncio.run(run())
+    out = [x[1] for x in c.sent if x[0] == "mh_lat"]
+    assert out == ["✨ Hazrat ilm ahliga yuksak hurmat körsatganlar\n\nAbduhakim domla Matqulov\n\n"
+                   "✅ «Hazratni xotirlab» körsatuvining 12 sonidan\n\n@hilolnashr_uz"]

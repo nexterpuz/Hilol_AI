@@ -246,3 +246,39 @@ def to_latin(text: str, entities: list | None, style: str = "new"):
         if e.length > 0:
             new.append(e)
     return del_surrogate("".join(out)), new
+
+
+def replace_handle(text: str, entities: list | None, old: str, new: str):
+    """Matndagi @old ni @new ga almashtiradi (masalan @hilolnashr → @hilolnashr_uz).
+
+    Faqat aynan shu username: @hilolnashr_qoqon kabi uzunroqlariga tegilmaydi. Formatlash offsetlari moslanadi.
+    """
+    old, new = old.lstrip("@"), new.strip().lstrip("@")
+    if not old or not new:
+        return text, [copy.copy(e) for e in (entities or [])]
+    s = add_surrogate(text or "")
+    pat = re.compile("@" + re.escape(old) + r"(?![A-Za-z0-9_])", re.I)
+    out, pos, mp, i = [], 0, [0] * (len(s) + 1), 0
+    for m in pat.finditer(s):
+        for k in range(i, m.start()):
+            mp[k] = pos + (k - i)
+        pos += m.start() - i
+        out.append(s[i:m.start()])
+        for k in range(m.start(), m.end()):
+            mp[k] = pos
+        out.append("@" + new)
+        pos += len(new) + 1
+        i = m.end()
+    for k in range(i, len(s)):
+        mp[k] = pos + (k - i)
+    pos += len(s) - i
+    out.append(s[i:])
+    mp[len(s)] = pos
+    ents = []
+    for e in entities or []:
+        e = copy.copy(e)
+        a, b = mp[min(e.offset, len(s))], mp[min(e.offset + e.length, len(s))]
+        e.offset, e.length = a, b - a
+        if e.length > 0:
+            ents.append(e)
+    return del_surrogate("".join(out)), ents

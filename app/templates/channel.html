@@ -25,7 +25,7 @@
 <div class="muted">Tabrik, iqtibos kabi sotuvga oid bo'lmagan postlarda bosh kanal imzosi (@hilolnashr) o'rniga shu qo'yiladi; to'liq aloqa bloki qo'shilmaydi. Bo'sh qoldirilsa, kanalning o'z username'i ishlatiladi.</div>
 </div>
 <label class="check"><input type="checkbox" name="mirror" value="1" {{ 'checked' if t and t.mirror }}> To'liq nusxa kanali — bosh kanaldagi har bir post o'zgarishsiz, filtr va so'rovsiz chiqadi (masalan, «Hilol Nashr (lotin)»)</label>
-<div class="muted" style="margin-top:-8px">Yoqilsa: aloqa bloki kesilmaydi, shablon va imzo qo'shilmaydi, qoidalar va tasdiqlar ishlamaydi. Faqat quyida tanlangan yozuv qo'llanadi. Bu kanal filiallar reytingida qatnashmaydi.</div>
+<div class="muted" style="margin-top:-8px">Yoqilsa: aloqa bloki kesilmaydi, shablon qo'shilmaydi, qoidalar va tasdiqlar ishlamaydi. «Qisqa imzo» maydoniga @username yozilsa (masalan @hilolnashr_uz), postdagi @hilolnashr faqat shu bilan almashtiriladi. Faqat quyida tanlangan yozuv qo'llanadi. Bu kanal filiallar reytingida qatnashmaydi.</div>
 <div>
 <label for="script">Postlar qaysi yozuvda chiqsin</label>
 {% set sc = (t.latin_style if t and t.latin else 'cyr') %}

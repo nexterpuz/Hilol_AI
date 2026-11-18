@@ -14,7 +14,7 @@ from telethon.tl.types import MessageMediaWebPage
 from . import ai, rules as fallback
 from .config import settings
 from .db import Decision, Delivery, Rule, Seen, Setting, Session, SourcePost, Target, log as db_log, now
-from .textops import build_post, fits, to_latin, message_to_template, parse_message_link
+from .textops import build_post, fits, replace_handle, to_latin, message_to_template, parse_message_link
 
 log = logging.getLogger(__name__)
 
@@ -174,13 +174,22 @@ def final_parts(post, target, delivery=None) -> tuple[int | None, str]:
     return cut, closing
 
 
+SOURCE_HANDLE = "hilolnashr"  # bosh kanal username'i (to'liq nusxada almashtiriladi)
+
+
+def finish_text(text: str, ents: list | None, target, source_handle: str = SOURCE_HANDLE):
+    """Kanalga xos oxirgi ishlov: to'liq nusxada @hilolnashr → kanal imzosi, keyin kerak bo'lsa lotin yozuvi."""
+    if getattr(target, "mirror", False) and (getattr(target, "signature_html", "") or "").strip().startswith("@"):
+        text, ents = replace_handle(text, ents, source_handle, target.signature_html.strip())
+    if getattr(target, "latin", False):
+        text, ents = to_latin(text, ents, getattr(target, "latin_style", None) or "new")
+    return text, ents
+
+
 def preview_text(post, target, delivery=None) -> str:
     """Post filial kanalida qanday matn bilan chiqishi (formatlashsiz ko'rinish)."""
     cut, closing = final_parts(post, target, delivery)
-    text = build_post(post.text or "", None, cut, closing)[0]
-    if getattr(target, "latin", False):
-        return to_latin(text, None, getattr(target, "latin_style", None) or "new")[0]
-    return text
+    return finish_text(build_post(post.text or "", None, cut, closing)[0], None, target)[0]
 
 
 def text_hash(msg) -> str:
@@ -294,6 +303,10 @@ class Pipeline:
             except IntegrityError:
                 await s.rollback()
                 return False
+
+    @property
+    def source_handle(self) -> str:
+        return getattr(self.source, "username", None) or SOURCE_HANDLE
 
     async def _full_album(self, msgs: list) -> list:
         """Telegram albomni ba'zan bo'laklab yetkazadi: bosh kanaldan butun albomni olamiz."""
@@ -509,8 +522,7 @@ class Pipeline:
         cap = next((m for m in msgs if m.message), msgs[0])
         cut, closing = final_parts(post, target, d)
         text, ents = build_post(cap.message or "", cap.entities, cut, closing)
-        if target.latin:
-            text, ents = to_latin(text, ents, target.latin_style or "new")
+        text, ents = finish_text(text, ents, target, self.source_handle)
         files = [m for m in msgs if is_file(m)]
         if not fits(text, bool(files), self.premium):
             await self._fail(delivery_id, target, "Matn Telegram limitidan uzun (Premium kerak yoki qisqartirish)")
@@ -752,8 +764,7 @@ class Pipeline:
                     text, ents = build_post(msg.message or "", msg.entities, None, "")
                 else:
                     text, ents = build_post(msg.message or "", msg.entities, post.cta_start_line, closing_for(target, post.block_type))
-                if target.latin:
-                    text, ents = to_latin(text, ents, target.latin_style or "new")
+                text, ents = finish_text(text, ents, target, self.source_handle)
             else:
                 text, ents = "", []  # albomning izohsiz elementi
             if not fits(text, is_file(msg), self.premium):
