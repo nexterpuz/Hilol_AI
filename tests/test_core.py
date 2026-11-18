@@ -198,3 +198,26 @@ def test_to_latin_keeps_entities():
     assert to_latin(text, [bold, url])[0].startswith("👉 Narxi: 78 000 söm\nSayt: ")
     assert o[b.offset:b.offset + b.length] == "Narxi"
     assert o[u.offset:u.offset + u.length] == "https://hilol.uz/шоп"  # havolaga tegilmaydi
+
+
+def test_mixed_script_words_are_fixed():
+    """Haqiqiy post: "Ҳуcнихат" ichida lotin "c" — kirill deb o'giriladi; sof lotin so'zlarga tegilmaydi."""
+    from telethon.helpers import add_surrogate
+
+    from app.textops import fix_mixed_script, to_latin
+
+    assert to_latin("«Муаллими соний» (Ҳуcнихат дафтари билан)", [])[0] == "«Muallimi soniy» (Husnixat daftari bilan)"
+    assert to_latin("КИТOБ ВА ДAФТАР", [])[0] == "KITOB VA DAFTAR"  # lotin O va A aralashgan
+    assert fix_mixed_script("Hilol-Nashr cafe, @hilol_reception, hilol.uz") == "Hilol-Nashr cafe, @hilol_reception, hilol.uz"
+    assert to_latin("«Hilol-Nashr» нашриёти, hilol.uz", [])[0] == "«Hilol-Nashr» naşriyoti, hilol.uz"
+    s = add_surrogate("👉 Ҳуcнихат")
+    assert len(fix_mixed_script(s)) == len(s)  # uzunlik o'zgarmaydi: formatlash siljimaydi
+
+
+def test_tricky_letters_official_rules():
+    from app.textops import to_latin
+
+    cases = {"тайёр": "tayyor", "қаердан": "qayerdan", "навое": "navoye", "тобеъинлардан": "tobeʼinlardan",
+             "ноябрь": "noyabr", "фильмни": "filmni", "Айюбхон": "Ayyubxon", "истиъоза": "istiʼoza"}
+    for cyr, lat in cases.items():
+        assert to_latin(cyr, [])[0] == lat, (cyr, to_latin(cyr, [])[0])

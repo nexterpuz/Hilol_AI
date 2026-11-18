@@ -191,6 +191,34 @@ def _latin_char(s: str, i: int, style: str = "new") -> str:
     return rep
 
 
+# Ko'rinishi kirillga o'xshash lotin harflari (matn terishda tez-tez aralashib ketadi: "Ҳуcнихат")
+_LOOKALIKE = str.maketrans({
+    "a": "а", "c": "с", "e": "е", "o": "о", "p": "р", "x": "х", "y": "у", "k": "к", "m": "м", "t": "т",
+    "A": "А", "B": "В", "C": "С", "E": "Е", "H": "Н", "K": "К", "M": "М", "O": "О", "P": "Р", "T": "Т", "X": "Х", "Y": "У",
+})
+
+
+def _is_cyr(ch: str) -> bool:
+    return "\u0400" <= ch <= "\u04ff"
+
+
+def fix_mixed_script(s: str) -> str:
+    """Kirill so'z ichidagi lotin ko'rinishdosh harflarni kirillga almashtiradi (uzunlik o'zgarmaydi)."""
+    out, i = list(s), 0
+    while i < len(s):
+        if not s[i].isalpha():
+            i += 1
+            continue
+        j = i
+        while j < len(s) and s[j].isalpha():
+            j += 1
+        word = s[i:j]
+        if any(_is_cyr(ch) for ch in word) and not word.isascii():
+            out[i:j] = list(word.translate(_LOOKALIKE))
+        i = j
+    return "".join(out)
+
+
 def to_latin(text: str, entities: list | None, style: str = "new"):
     """Matnni lotin yozuviga o'giradi; formatlash (entity) offsetlari moslanadi.
 
@@ -198,7 +226,7 @@ def to_latin(text: str, entities: list | None, style: str = "new"):
 
     Havola, kod, @username kabi qismlarga tegilmaydi. Lotin matn o'zgarmaydi.
     """
-    s = add_surrogate(text or "")
+    s = fix_mixed_script(add_surrogate(text or ""))
     keep = set()
     for e in entities or []:
         if type(e).__name__ in _KEEP:
