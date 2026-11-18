@@ -160,6 +160,23 @@ def test_to_latin_uzbek():
         "Already latin: Qoʻqon @hilol_reception": "Already latin: Qoʻqon @hilol_reception",
     }
     for cyr, lat in cases.items():
+        assert to_latin(cyr, [], "old")[0] == lat, (cyr, to_latin(cyr, [], "old")[0])
+
+
+def test_to_latin_new_alphabet():
+    """Takomillashtirilgan alifbo: oʻ→ö, gʻ→ğ, sh→ş, ch→ç."""
+    from app.textops import to_latin
+
+    cases = {
+        "Шайх ҳазратлари": "Şayx hazratlari",
+        "Қўқондаги дўконимиз": "Qöqondagi dökonimiz",
+        "Ўзбекистон бўйлаб": "Özbekiston böylab",
+        "жамғармаси, Ғайрат": "jamğarmasi, Ğayrat",
+        "кўрсатиш, чегирма, Чиқди": "körsatiş, çegirma, Çiqdi",
+        "ДЎКОН ВА ШАЙХ": "DÖKON VA ŞAYX",
+        "Ер юзи, маълумот": "Yer yuzi, maʼlumot",
+    }
+    for cyr, lat in cases.items():
         assert to_latin(cyr, [])[0] == lat, (cyr, to_latin(cyr, [])[0])
 
 
@@ -174,9 +191,10 @@ def test_to_latin_keeps_entities():
     from telethon.tl.types import MessageEntityUrl
 
     url = MessageEntityUrl(offset=s.index("https"), length=len(s) - s.index("https"))
-    out, ents = to_latin(text, [bold, url])
+    out, ents = to_latin(text, [bold, url], "old")
     o = add_surrogate(out)
     b, u = sorted(ents, key=lambda e: e.offset)
     assert out.startswith("👉 Narxi: 78 000 soʻm\nSayt: ")
+    assert to_latin(text, [bold, url])[0].startswith("👉 Narxi: 78 000 söm\nSayt: ")
     assert o[b.offset:b.offset + b.length] == "Narxi"
     assert o[u.offset:u.offset + u.length] == "https://hilol.uz/шоп"  # havolaga tegilmaydi

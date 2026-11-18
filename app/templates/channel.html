@@ -25,6 +25,16 @@
 <div class="muted">Tabrik, iqtibos kabi sotuvga oid bo'lmagan postlarda bosh kanal imzosi (@hilolnashr) o'rniga shu qo'yiladi; to'liq aloqa bloki qo'shilmaydi. Bo'sh qoldirilsa, kanalning o'z username'i ishlatiladi.</div>
 </div>
 <div>
+<label for="script">Postlar qaysi yozuvda chiqsin</label>
+{% set sc = (t.latin_style if t and t.latin else 'cyr') %}
+<select id="script" name="script">
+<option value="cyr" {{ 'selected' if sc == 'cyr' }}>Kirill — bosh kanaldagidek</option>
+<option value="new" {{ 'selected' if sc == 'new' }}>Lotin, yangi alifbo (ö, ğ, ş, ç)</option>
+<option value="old" {{ 'selected' if sc == 'old' }}>Lotin, eski alifbo (oʻ, gʻ, sh, ch)</option>
+</select>
+<div class="muted">Lotin tanlansa, bosh kanaldagi kirill matn avtomatik o'giriladi. Filial aloqa bloki va imzosini ham shu alifboda yozing.</div>
+</div>
+<div>
 <label for="kw">Filial kalit so'zlari</label>
 <input id="kw" name="keywords" type="text" value="{{ t.keywords if t }}" placeholder="Qo'qon, Farg'ona viloyati">
 <div class="muted">Boshqa filialga tegishli yangiliklarni ajratishda AI shu so'zlarga tayanadi.</div>
@@ -39,7 +49,7 @@
 <label class="check"><input type="checkbox" name="sync_edits" value="1" {{ 'checked' if not t or t.sync_edits }}> Manbadagi tahrirni sinxronlash</label>
 <label class="check"><input type="checkbox" name="sync_deletes" value="1" {{ 'checked' if not t or t.sync_deletes }}> Manbada o'chirilsa, bu yerdan ham o'chirish</label>
 <label class="check"><input type="checkbox" name="silent" value="1" {{ 'checked' if t and t.silent }}> Ovozsiz yuborish</label>
-<label class="check"><input type="checkbox" name="latin" value="1" {{ 'checked' if t and t.latin }}> Postlarni lotin yozuvida chiqarish</label>
+
 </div>
 <div class="row"><button class="btn primary" type="submit">Saqlash</button></div>
 </form>

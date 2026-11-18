@@ -970,7 +970,8 @@ def test_latin_channel_gets_transliterated_post(monkeypatch):
         await init_db()
         async with Session() as s:
             await s.execute(update(Target).values(active=False))
-            s.add_all([Target(name="LT", username="lt_lat", latin=True, template_html="Буюртма учун: +998 90 000 00 00"),
+            s.add_all([Target(name="LT", username="lt_lat", latin=True, latin_style="old", template_html="Буюртма учун: +998 90 000 00 00"),
+                       Target(name="LN", username="lt_new", latin=True, template_html="Буюртма учун: +998 90 000 00 00"),
                        Target(name="CY", username="lt_cyr", template_html="Буюртма учун: +998 90 000 00 00")])
             await s.commit()
         await Pipeline(c, "manba", Bot(), premium=False).on_new([store[1201]])
@@ -979,3 +980,4 @@ def test_latin_channel_gets_transliterated_post(monkeypatch):
     out = {x[0]: x[1] for x in c.sent if x[0].startswith("lt_")}
     assert out["lt_lat"] == "✨ Kunni Qurʼon bilan boshlang\n👉 Narxi: 78 000 soʻm\n\nBuyurtma uchun: +998 90 000 00 00"
     assert out["lt_cyr"].startswith("✨ Кунни Қуръон") and "Буюртма учун" in out["lt_cyr"]
+    assert out["lt_new"] == "✨ Kunni Qurʼon bilan boşlang\n👉 Narxi: 78 000 söm\n\nBuyurtma uçun: +998 90 000 00 00"

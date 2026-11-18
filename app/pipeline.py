@@ -159,7 +159,9 @@ def preview_text(post, target, delivery=None) -> str:
     """Post filial kanalida qanday matn bilan chiqishi (formatlashsiz ko'rinish)."""
     cut, closing = final_parts(post, target, delivery)
     text = build_post(post.text or "", None, cut, closing)[0]
-    return to_latin(text, None)[0] if getattr(target, "latin", False) else text
+    if getattr(target, "latin", False):
+        return to_latin(text, None, getattr(target, "latin_style", None) or "new")[0]
+    return text
 
 
 def text_hash(msg) -> str:
@@ -484,7 +486,7 @@ class Pipeline:
         cut, closing = final_parts(post, target, d)
         text, ents = build_post(cap.message or "", cap.entities, cut, closing)
         if target.latin:
-            text, ents = to_latin(text, ents)
+            text, ents = to_latin(text, ents, target.latin_style or "new")
         files = [m for m in msgs if is_file(m)]
         if not fits(text, bool(files), self.premium):
             await self._fail(delivery_id, target, "Matn Telegram limitidan uzun (Premium kerak yoki qisqartirish)")
@@ -724,7 +726,7 @@ class Pipeline:
             if is_caption_msg:
                 text, ents = build_post(msg.message or "", msg.entities, post.cta_start_line, closing_for(target, post.block_type))
                 if target.latin:
-                    text, ents = to_latin(text, ents)
+                    text, ents = to_latin(text, ents, target.latin_style or "new")
             else:
                 text, ents = "", []  # albomning izohsiz elementi
             if not fits(text, is_file(msg), self.premium):

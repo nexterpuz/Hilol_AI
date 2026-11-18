@@ -520,7 +520,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         name: str = Form(...), username: str = Form(...), mode: str = Form("smart"),
         template_html: str = Form(""), signature_html: str = Form(""), keywords: str = Form(""),
         sync_edits: str = Form(""), sync_deletes: str = Form(""), silent: str = Form(""),
-        manager_phones: str = Form(""), branch_approval: str = Form(""), latin: str = Form(""),
+        manager_phones: str = Form(""), branch_approval: str = Form(""), script: str = Form("cyr"),
     ):
         username = username.strip().removeprefix("https://t.me/").lstrip("@")
         async with Session() as s:
@@ -538,7 +538,9 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             target.keywords = keywords.strip()
             target.sync_edits, target.sync_deletes, target.silent = bool(sync_edits), bool(sync_deletes), bool(silent)
             target.manager_phones, target.branch_approval = manager_phones.strip(), bool(branch_approval)
-            target.latin = bool(latin)
+            target.latin = script in ("new", "old")
+            if target.latin:
+                target.latin_style = script
             # Ro'yxatdan olib tashlangan raqam egasi endi tasdiqlay olmaydi
             keys = phone_keys(target.manager_phones)
             target.manager_ids = {uid: k for uid, k in (target.manager_ids or {}).items() if k in keys}

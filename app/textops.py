@@ -155,6 +155,8 @@ _CYR = {
     "я": "ya", "ё": "yo", "ў": "o\u02bb", "қ": "q", "ғ": "g\u02bb", "ҳ": "h",
 }
 _VOWELS = set("аеёиоуэюяў")
+# 2026-yil oktabrdagi takomillashtirilgan alifbo: oʻ→ö, gʻ→ğ, sh→ş, ch→ç
+_NEW = {"ў": "ö", "ғ": "ğ", "ш": "ş", "щ": "ş", "ч": "ç"}
 _KEEP = ("MessageEntityCode", "MessageEntityPre", "MessageEntityUrl", "MessageEntityEmail", "MessageEntityMention")
 
 
@@ -166,9 +168,12 @@ def _is_upper_word(s: str, i: int) -> bool:
     return False
 
 
-def _latin_char(s: str, i: int) -> str:
+def _latin_char(s: str, i: int, style: str = "new") -> str:
     ch = s[i]
     low = ch.lower()
+    if style == "new" and low in _NEW:
+        rep = _NEW[low]
+        return rep.upper() if ch != low else rep
     if low == "е":
         prev = s[i - 1].lower() if i else ""
         rep = "ye" if (not prev.isalpha() or prev in _VOWELS or prev in "ъь") else "e"
@@ -186,8 +191,10 @@ def _latin_char(s: str, i: int) -> str:
     return rep
 
 
-def to_latin(text: str, entities: list | None):
+def to_latin(text: str, entities: list | None, style: str = "new"):
     """Matnni lotin yozuviga o'giradi; formatlash (entity) offsetlari moslanadi.
+
+    style="new" — takomillashtirilgan alifbo (ö, ğ, ş, ç); "old" — oʻ, gʻ, sh, ch.
 
     Havola, kod, @username kabi qismlarga tegilmaydi. Lotin matn o'zgarmaydi.
     """
@@ -199,7 +206,7 @@ def to_latin(text: str, entities: list | None):
     out, pos, mp = [], 0, [0] * (len(s) + 1)
     for i in range(len(s)):
         mp[i] = pos
-        piece = s[i] if i in keep else _latin_char(s, i)
+        piece = s[i] if i in keep else _latin_char(s, i, style)
         out.append(piece)
         pos += len(piece)
     mp[len(s)] = pos
