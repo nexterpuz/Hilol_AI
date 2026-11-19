@@ -197,7 +197,7 @@ def render_branch(d: dict, kind_label: str, period: str, generated: datetime) ->
 
 
 def render_overall(cmp_: dict, kind_label: str, period: str, generated: datetime) -> bytes:
-    chans = cmp_["channels"]
+    chans = [c for c in cmp_["channels"] if c.get("active", True)]  # to'xtatilgan kanallar hisobotga kirmaydi
     c = Canvas(1200 + 130 * max(1, len(chans)))
     c.header("Barcha filiallar", f"{kind_label} · {period}")
     subs = [x["subs"] for x in chans if x["subs"] is not None]

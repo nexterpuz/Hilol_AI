@@ -480,3 +480,15 @@ def test_mirror_channel_not_in_ranking(monkeypatch):
     monkeypatch.setattr(web, "compare_data", fake_compare)
     rk = asyncio.run(reports.ranking())
     assert rk["total"] == 1 and list(rk["ranks"]) == [1]
+
+
+def test_overall_report_skips_inactive_channels():
+    from datetime import datetime
+
+    from PIL import Image
+
+    rows = [{"id": i, "name": f"K{i}", "active": i < 3, "subs": 100, "growth": 1, "growth_pct": 1.0, "posts": 1, "views": 10, "reach": 10}
+            for i in range(30)]
+    img = Image.open(io.BytesIO(reports.render_overall({"channels": rows, "avg_reach": 10, "audience": {}}, "Haftalik hisobot", "x",
+                                                       datetime(2026, 11, 19, 18, 0, tzinfo=T))))
+    assert img.height < 2000  # faqat 3 ta faol kanal chizildi

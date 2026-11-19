@@ -1109,3 +1109,41 @@ def test_mirror_channel_replaces_only_main_handle(monkeypatch):
     out = [x[1] for x in c.sent if x[0] == "mh_lat"]
     assert out == ["✨ Hazrat ilm ahliga yuksak hurmat körsatganlar\n\nAbduhakim domla Matqulov\n\n"
                    "✅ «Hazratni xotirlab» körsatuvining 12 sonidan\n\n@hilolnashr_uz"]
+
+
+def test_condolence_only_to_mirror_channel(monkeypatch):
+    """Haqiqiy ta'ziya posti: faqat to'liq nusxa (lotin) kanaliga; filiallarga chiqmaydi, hech kimdan so'ralmaydi."""
+    from sqlalchemy import update
+
+    from app.db import Setting
+    from app.pipeline import Pipeline
+
+    async def no_ai(*a, **k):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    text = ("Таъзия\n\nIslom.uz порталининг ривожига кўп йиллар хизмат қилган Абу Муслим (Адҳам Атажанов)нинг вафоти "
+            "муносабати билан у кишининг барча оила аъзоларига таъзия изҳор этамиз.\n\nИннаа лиллааҳи ва иннаа илайҳи рожиъуун!")
+    store, bot = {1601: mk(1601, text, photo_id=1601)}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            row = await s.get(Setting, "skip_words")
+            if row is None:
+                s.add(Setting(key="skip_words", value="вакансия"))  # admin ro'yxatni o'zgartirgan holat
+            else:
+                row.value = "вакансия"
+            s.add_all([Target(name="Hilol Nashr (lotin)", username="cd_lat", mirror=True, latin=True, signature_html="@hilolnashr_uz"),
+                       Target(name="Qo'qon", username="cd_q", manager_ids={"7901": "1"}), Target(name="Jizzax", username="cd_j")])
+            await s.commit()
+        await Pipeline(c, "manba", bot, premium=True).on_new([store[1601]])
+        async with Session() as s:
+            await s.delete(await s.get(Setting, "skip_words"))
+            await s.commit()
+
+    asyncio.run(run())
+    assert [x[0] for x in c.sent if x[0].startswith("cd_")] == ["cd_lat"]
+    assert not [m for m in bot.msgs if isinstance(m, tuple) and str(m[2]).startswith("cd_")]
