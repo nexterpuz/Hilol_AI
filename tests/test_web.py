@@ -194,6 +194,15 @@ def test_panel_flow():
     # yangi kanal, agent admin bo'lmagan holat
     r = c.post("/channels/0", data={"name": "Yangi", "username": "@yomon", "mode": "smart"})
     assert "Agent admin emas" in c.get(r.headers["location"]).text
+    # bo'lim saqlanadi; noto'g'ri qiymat va to'liq nusxa kanalida bo'lim bo'lmaydi
+    loc = r.headers["location"].split("?")[0]
+    c.post(loc, data={"name": "Yangi", "username": "yomon", "region": "vodiy"})
+    assert '<option value="vodiy" selected>' in c.get(loc).text
+    assert "Vodiy" in c.get("/channels").text and "Vodiy" in c.get("/analytics").text
+    c.post(loc, data={"name": "Yangi", "username": "yomon", "region": "xato"})
+    assert '<option value="vodiy" selected>' not in c.get(loc).text
+    c.post(loc, data={"name": "Yangi", "username": "yomon", "region": "voha", "mirror": "1"})
+    assert '<option value="voha" selected>' not in c.get(loc).text
     # takroriy username rad etiladi
     c.post("/channels/0", data={"name": "Dubl", "username": "qoqon_x"})
     assert "allaqachon" in c.get("/channels/0").text

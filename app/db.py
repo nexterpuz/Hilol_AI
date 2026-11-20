@@ -64,6 +64,7 @@ class Target(Base):
     # To'liq nusxa (masalan, "Hilol Nashr (lotin)"): har bir post o'zgarishsiz, filtr va so'rovsiz
     mirror: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     latin_style: Mapped[str] = mapped_column(String(5), default="new", server_default="new")  # new: ö ğ ş ç; old: oʻ gʻ sh ch
+    region: Mapped[str] = mapped_column(String(20), default="", server_default="")  # bo'lim: toshkent | vodiy | voha | ""
 
 
 class Rule(Base):
@@ -184,6 +185,7 @@ def _migrate(conn) -> None:
         "targets": {
             "signature_html": "TEXT DEFAULT '' NOT NULL", "manager_phones": "TEXT DEFAULT '' NOT NULL",
             "manager_ids": "JSON", "manager_seen": "JSON", "latin": "BOOLEAN DEFAULT FALSE NOT NULL", "latin_style": "VARCHAR(5) DEFAULT 'new' NOT NULL", "mirror": "BOOLEAN DEFAULT FALSE NOT NULL", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",
+            "region": "VARCHAR(20) DEFAULT '' NOT NULL",
         },
     }
     inspector = inspect(conn)

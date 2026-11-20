@@ -22,8 +22,18 @@
 </section>
 
 <section class="card">
+<h2>Bo'limlar</h2>
+<div class="muted">Faol filial kanallari bo'lim bo'yicha jamlangan. Qamrov obunachilar soni bo'yicha tortilgan o'rtacha; unikal obunachi — bo'lim ichida bir necha kanalga obuna odam bir marta sanalgan.</div>
+<div class="grid" id="regions"></div>
+<div class="note warn" id="unassigned" hidden></div>
+</section>
+
+<section class="card">
 <div class="row between">
 <h2>Kanallarni solishtirish</h2>
+<div class="seg" id="region" role="group" aria-label="Bo'lim">
+<button type="button" data-v="" aria-pressed="true">Hammasi</button>{% for k, v in regions.items() %}<button type="button" data-v="{{ k }}" aria-pressed="false">{{ v }}</button>{% endfor %}
+</div>
 <div class="seg" id="metric" role="group" aria-label="Ko'rsatkich">
 <button type="button" data-v="reach" aria-pressed="true">Qamrov</button><button type="button" data-v="growth_pct" aria-pressed="false">O'sish</button><button type="button" data-v="subs" aria-pressed="false">Obunachilar</button><button type="button" data-v="views" aria-pressed="false">Ko'rishlar</button>
 </div>
@@ -64,12 +74,26 @@ const METRICS = {
 let chart, compare = null;
 const getDays = segmented("days", () => refresh());
 const getMetric = segmented("metric", () => drawCompare());
+const getRegion = segmented("region", () => drawCompare());
+
+function drawRegions(c) {
+  document.getElementById("regions").innerHTML = c.regions.map(r => `<div class="kpi">
+<div class="muted"><strong>${esc(r.name)}</strong> · ${r.channels} ta kanal</div>
+<div class="v">${fmt(r.subs)}</div>
+<div class="muted">o'sish ${signed(r.growth)}${r.growth_pct !== null ? " (" + signed(r.growth_pct) + "%)" : ""} · qamrov ${fmt(r.reach, "%")}</div>
+<div class="muted">${r.posts} ta post${r.unique !== null ? " · unikal " + fmt(r.unique) : ""}</div></div>`).join("")
+    || '<div class="muted">Hali hech bir kanalga bo\'lim tanlanmagan. Kanal sozlamasida «Bo\'lim» maydonini to\'ldiring.</div>';
+  const u = document.getElementById("unassigned");
+  u.hidden = !c.unassigned;
+  u.textContent = `${c.unassigned} ta faol kanalga bo'lim tanlanmagan — ular bo'limlar yig'indisiga kirmaydi. Filial kanallari sahifasida tekshiring.`;
+}
 
 function drawCompare() {
   if (!compare) return;
   const key = getMetric(), m = METRICS[key];
   document.getElementById("metric-note").textContent = m.note;
-  const rows = compare.channels.filter(c => c[key] !== null).sort((a, b) => b[key] - a[key]);
+  const region = getRegion(), inRegion = c => !region || c.region === region;
+  const rows = compare.channels.filter(c => c[key] !== null && inRegion(c)).sort((a, b) => b[key] - a[key]);
   const box = document.getElementById("compare-box");
   box.style.height = Math.max(160, rows.length * 34 + 50) + "px";
   const data = {labels: rows.map(c => c.name), datasets: [{label: m.label, data: rows.map(c => c[key]), backgroundColor: ACCENT, borderRadius: 4, barThickness: 18}]};
@@ -82,12 +106,12 @@ function drawCompare() {
   } else { chart.data = data; chart.update(); }
 
   const avg = compare.avg_reach;
-  const ranked = [...compare.channels].sort((a, b) => (b[key] ?? -Infinity) - (a[key] ?? -Infinity));
+  const ranked = compare.channels.filter(inRegion).sort((a, b) => (b[key] ?? -Infinity) - (a[key] ?? -Infinity));
   document.getElementById("rank").innerHTML = ranked.map((c, i) => {
     let verdict = '<span class="muted">Ma\'lumot yetarli emas</span>';
     if (!c.active) verdict = '<span class="muted">To\'xtatilgan</span>';
     else if (c.reach !== null && avg !== null) verdict = c.reach < avg * 0.8 ? '<span class="low">▼ O\'rtachadan past</span>' : c.reach > avg * 1.2 ? '<span class="ok">▲ O\'rtachadan yuqori</span>' : "O'rtacha";
-    return `<tr><td>${i + 1}</td><td><a href="/channels/${c.id}/stats"><strong>${esc(c.name)}</strong></a></td><td class="num">${fmt(c.subs)}</td><td class="num">${signed(c.growth)}${c.growth_pct !== null ? " (" + signed(c.growth_pct) + "%)" : ""}</td><td class="num">${c.posts}</td><td class="num">${fmt(c.views)}</td><td class="num">${fmt(c.reach, "%")}</td><td class="num">${fmt(c.only_here)}</td><td class="num">${fmt(c.shared)}</td><td>${verdict}</td></tr>`;
+    return `<tr><td>${i + 1}</td><td><a href="/channels/${c.id}/stats"><strong>${esc(c.name)}</strong></a>${c.region ? ' <span class="muted">· ' + esc(compare.region_names[c.region] || "") + '</span>' : ""}</td><td class="num">${fmt(c.subs)}</td><td class="num">${signed(c.growth)}${c.growth_pct !== null ? " (" + signed(c.growth_pct) + "%)" : ""}</td><td class="num">${c.posts}</td><td class="num">${fmt(c.views)}</td><td class="num">${fmt(c.reach, "%")}</td><td class="num">${fmt(c.only_here)}</td><td class="num">${fmt(c.shared)}</td><td>${verdict}</td></tr>`;
   }).join("") || '<tr><td colspan="10" class="muted">Hali kanal yo\'q.</td></tr>';
   drawAudience(compare.audience);
 }
@@ -148,7 +172,7 @@ document.getElementById("bt-target").addEventListener("change", () => refresh())
 const refresh = autoRefresh(async () => {
   const days = getDays(), target = document.getElementById("bt-target").value;
   const [c, bt] = await Promise.all([getJSON("/api/compare?days=" + days), getJSON(`/api/besttime?days=${days}&target_id=${target}`)]);
-  compare = c; drawCompare(); drawHeat(bt);
+  compare = c; drawRegions(c); drawCompare(); drawHeat(bt);
 });
 </script>
 {% endblock %}

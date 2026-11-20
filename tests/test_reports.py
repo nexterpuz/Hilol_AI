@@ -492,3 +492,30 @@ def test_overall_report_skips_inactive_channels():
     img = Image.open(io.BytesIO(reports.render_overall({"channels": rows, "avg_reach": 10, "audience": {}}, "Haftalik hisobot", "x",
                                                        datetime(2026, 11, 19, 18, 0, tzinfo=T))))
     assert img.height < 2000  # faqat 3 ta faol kanal chizildi
+
+
+def test_overall_report_groups_by_region():
+    import io
+    from datetime import datetime
+
+    from PIL import Image
+
+    from app import reports
+    from app.web import REGIONS, region_rows
+
+    ch = [dict(id=i, name=n, subs=s, growth=g, posts=p, reach=r, region=rg, active=a, mirror=m, views=None)
+          for i, (n, s, g, p, r, rg, a, m) in enumerate([
+              ("Qo'qon", 1000, -7, 5, 10, "vodiy", True, False), ("Andijon", 500, 1, 5, 20, "vodiy", True, False),
+              ("Chorsu", 300, 6, 2, 30, "toshkent", True, False), ("Lotin", 600, 0, 7, 11, "", True, True),
+              ("Eski", 900, 0, 0, None, "voha", False, False)])]
+    members = {0: {"a", "b"}, 1: {"b", "c"}}
+    rows = {r["key"]: r for r in region_rows(ch, members)}
+    assert set(rows) == {"vodiy", "toshkent"}  # to'xtatilgan va to'liq nusxa kanallar kirmaydi
+    v = rows["vodiy"]
+    assert (v["channels"], v["subs"], v["growth"], v["posts"]) == (2, 1500, -6, 10)
+    assert v["reach"] == round((10 * 1000 + 20 * 500) / 1500)  # obunachi bo'yicha tortilgan
+    assert v["unique"] == 3 and rows["toshkent"]["unique"] is None
+    assert region_rows([dict(ch[2], growth=0)], {})[0]["growth_pct"] == 0.0
+    cmp_ = {"channels": ch, "avg_reach": 15, "audience": {}, "regions": list(rows.values()), "region_names": REGIONS}
+    img = Image.open(io.BytesIO(reports.render_overall(cmp_, "Kunlik hisobot", "x", datetime(2026, 11, 20, 18))))
+    assert img.width == 1080 and img.height > 1500

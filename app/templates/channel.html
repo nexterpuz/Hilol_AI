@@ -7,6 +7,12 @@
 <div class="grid">
 <div><label for="name">Nomi</label><input id="name" name="name" type="text" required value="{{ t.name if t }}"></div>
 <div><label for="username">Kanal username yoki havolasi</label><input id="username" name="username" type="text" required value="{{ t.username if t }}" placeholder="Hilol_qoqon_test"></div>
+<div><label for="region">Bo'lim</label>
+<select id="region" name="region">
+<option value="">— tanlanmagan —</option>
+{% for k, v in regions.items() %}<option value="{{ k }}" {{ 'selected' if t and t.region == k }}>{{ v }}</option>{% endfor %}
+</select>
+<div class="muted">Analitika va hisobotda filiallar shu bo'limlar bo'yicha ham jamlanadi. To'liq nusxa kanaliga bo'lim berilmaydi.</div></div>
 <div><label for="mode">Ish rejimi</label>
 <select id="mode" name="mode">
 <option value="auto" {{ 'selected' if t and t.mode == 'auto' }}>Avto — har bir post darhol joylanadi</option>

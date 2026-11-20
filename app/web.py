@@ -21,6 +21,34 @@ from .db import Decision, Delivery, Event, Setting, Rule, Session, SourcePost, S
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 MODES = {"auto": "Avto", "smart": "Aqlli", "manual": "Qo'lda"}
+# Filiallar bo'limlari (hududlar): kanal sozlamasida tanlanadi, analitika va hisobotda guruhlanadi
+REGIONS = {"toshkent": "Toshkent", "vodiy": "Vodiy", "voha": "Voha"}
+
+
+def region_rows(channels: list[dict], members: dict) -> list[dict]:
+    """Bo'limlar bo'yicha yig'indi: faqat faol, to'liq nusxa bo'lmagan kanallar."""
+    out = []
+    for key, name in REGIONS.items():
+        chans = [c for c in channels if c["region"] == key and c["active"] and not c["mirror"]]
+        if not chans:
+            continue
+        subs = [c["subs"] for c in chans if c["subs"] is not None]
+        growth = [c["growth"] for c in chans if c["growth"] is not None]
+        start = sum(subs) - sum(growth) if subs and growth else None
+        # Qamrov obunachilar soni bo'yicha tortilgan o'rtacha: katta kanal ko'proq ta'sir qiladi
+        weighted = [(c["reach"], c["subs"]) for c in chans if c["reach"] is not None and c["subs"]]
+        reach = round(sum(r * n for r, n in weighted) / sum(n for _, n in weighted)) if weighted else None
+        hashes = [members.get(c["id"], set()) for c in chans]
+        listed = sum(len(h) for h in hashes)
+        out.append({
+            "key": key, "name": name, "channels": len(chans),
+            "subs": sum(subs) if subs else None, "growth": sum(growth) if growth else None,
+            "growth_pct": round(100 * sum(growth) / start, 1) + 0.0 if start else None,  # -0.0 -> 0.0
+            "posts": sum(c["posts"] for c in chans), "reach": reach,
+            # Bo'lim ichida bir odam bir necha kanalda bo'lsa bir marta sanaladi
+            "unique": len(set().union(*hashes)) if listed else None, "listed": listed or None,
+        })
+    return out
 
 
 def _go(path: str) -> RedirectResponse:
@@ -170,7 +198,7 @@ async def compare_data(days: int) -> dict:
         start = subs - growth if subs is not None and growth is not None else None
         channels.append({
             "id": r["t"].id, "name": r["t"].name, "active": r["t"].active, "subs": subs, "growth": growth,
-            "mirror": bool(getattr(r["t"], "mirror", False)),
+            "mirror": bool(getattr(r["t"], "mirror", False)), "region": getattr(r["t"], "region", "") or "",
             "growth_pct": round(100 * growth / start, 1) if start else None,
             "posts": r["posts"], "views": r["views"], "reach": r["reach"],
         })
@@ -196,7 +224,11 @@ async def compare_data(days: int) -> dict:
         "total_subs": total_subs or None,
         "coverage": round(100 * min(listed, total_subs) / total_subs) if total_subs and listed else None,
     }
-    return {"channels": channels, "avg_reach": data["avg_reach"], "days": days, "audience": audience}
+    return {
+        "channels": channels, "avg_reach": data["avg_reach"], "days": days, "audience": audience,
+        "regions": region_rows(channels, members), "region_names": REGIONS,
+        "unassigned": sum(1 for c in channels if c["active"] and not c["mirror"] and c["region"] not in REGIONS),
+    }
 
 
 async def _deliveries_with_stats(since: datetime, target_id: int | None = None):
@@ -332,7 +364,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         connected = bool(agent and agent.status.get("connected"))
         return templates.TemplateResponse(
             request, name,
-            {"modes": MODES, "path": request.url.path, "connected": connected, "ephemeral_db": EPHEMERAL_DB,
+            {"modes": MODES, "regions": REGIONS, "path": request.url.path, "connected": connected, "ephemeral_db": EPHEMERAL_DB,
              "pending_count": getattr(request.state, "pending", 0),
              "paused": getattr(request.state, "paused", False), **ctx},
         )
@@ -522,6 +554,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         template_html: str = Form(""), signature_html: str = Form(""), keywords: str = Form(""),
         sync_edits: str = Form(""), sync_deletes: str = Form(""), silent: str = Form(""),
         manager_phones: str = Form(""), branch_approval: str = Form(""), script: str = Form("cyr"), mirror: str = Form(""),
+        region: str = Form(""),
     ):
         username = username.strip().removeprefix("https://t.me/").lstrip("@")
         async with Session() as s:
@@ -540,6 +573,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             target.sync_edits, target.sync_deletes, target.silent = bool(sync_edits), bool(sync_deletes), bool(silent)
             target.manager_phones, target.branch_approval = manager_phones.strip(), bool(branch_approval)
             target.mirror = bool(mirror)
+            target.region = region if region in REGIONS and not target.mirror else ""
             target.latin = script in ("new", "old")
             if target.latin:
                 target.latin_style = script

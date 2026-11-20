@@ -97,6 +97,25 @@ class Canvas:
         rows = (len(items) + 1) // 2
         self.y += rows * (ch + gap)
 
+    def regions(self, title: str, items: list[dict]) -> None:
+        """Bo'limlar: bir qatorda 3 tagacha karta — nom, obunachilar, o'sish, qamrov, postlar."""
+        self.d.text((PAD + 4, self.y), title, font=font(28, "SemiBold"), fill=TEXT)
+        self.y += 52
+        per_row, gap, ch = 3, 24, 230
+        cw = (W - 2 * PAD - gap * (per_row - 1)) // per_row
+        for i, r in enumerate(items):
+            x = PAD + (i % per_row) * (cw + gap)
+            y = self.y + (i // per_row) * (ch + gap)
+            self.d.rounded_rectangle((x, y, x + cw, y + ch), radius=24, fill=CARD, outline=LINE, width=2)
+            self.d.text((x + 28, y + 24), fit(self.d, r["name"], font(28, "Bold"), cw - 56), font=font(28, "Bold"), fill=GREEN_DARK)
+            self.d.text((x + 28, y + 66), num(r["subs"]), font=font(46, "Bold"), fill=TEXT)
+            pct = f" ({'+' if r['growth_pct'] > 0 else ''}{r['growth_pct']}%)" if r.get("growth_pct") is not None else ""
+            lines = [f"o'sish {signed(r['growth'])}{pct}", f"qamrov {num(r['reach'], '%')} · {num(r['posts'])} post",
+                     f"{r['channels']} ta kanal" + (f" · unikal {num(r['unique'])}" if r.get("unique") else "")]
+            for k, line in enumerate(lines):
+                self.d.text((x + 28, y + 128 + k * 30), fit(self.d, line, font(21), cw - 56), font=font(21), fill=MUTED)
+        self.y += ((len(items) + per_row - 1) // per_row) * (ch + gap)
+
     def line_chart(self, title: str, values: list[int], left: str, right: str) -> None:
         x0, y0, x1, y1 = self.card(380)
         self.d.text((x0 + 36, y0 + 28), title, font=font(28, "SemiBold"), fill=TEXT)
@@ -151,7 +170,8 @@ class Canvas:
             lw = self.d.textlength(label, font=font(24, "SemiBold"))
             self.d.text((x1 - 36 - lw, y + 3), label, font=font(24, "SemiBold"), fill=TEXT)
 
-    def table(self, title: str, head: list[str], body: list[list[str]]) -> None:
+    def table(self, title: str, head: list[str], body: list) -> None:
+        """body qatori ro'yxat bo'lsa — oddiy qator, satr bo'lsa — guruh sarlavhasi (masalan, bo'lim nomi)."""
         h = 96 + 50 + max(1, len(body)) * 54 + 16
         x0, y0, x1, _ = self.card(h)
         self.d.text((x0 + 36, y0 + 28), title, font=font(28, "SemiBold"), fill=TEXT)
@@ -169,6 +189,10 @@ class Canvas:
         for r, row in enumerate(body):
             y = y0 + 142 + r * 54
             self.d.line((x0 + 36, y - 10, x1 - 36, y - 10), fill=LINE, width=2)
+            if isinstance(row, str):
+                self.d.rectangle((x0 + 36, y - 8, x1 - 36, y + 42), fill=GREEN_SOFT)
+                self.d.text((x0 + 48, y + 2), row, font=font(22, "Bold"), fill=GREEN_DARK)
+                continue
             for c, t in enumerate(row):
                 cell(c, y, t, font(23, "SemiBold" if c == 0 else "Regular"), TEXT)
 
@@ -198,7 +222,8 @@ def render_branch(d: dict, kind_label: str, period: str, generated: datetime) ->
 
 def render_overall(cmp_: dict, kind_label: str, period: str, generated: datetime) -> bytes:
     chans = [c for c in cmp_["channels"] if c.get("active", True)]  # to'xtatilgan kanallar hisobotga kirmaydi
-    c = Canvas(1200 + 130 * max(1, len(chans)))
+    regions = cmp_.get("regions") or []
+    c = Canvas(1500 + 130 * max(1, len(chans)) + 260 * ((len(regions) + 2) // 3))
     c.header("Barcha filiallar", f"{kind_label} · {period}")
     subs = [x["subs"] for x in chans if x["subs"] is not None]
     growth = [x["growth"] for x in chans if x["growth"] is not None]
@@ -210,11 +235,22 @@ def render_overall(cmp_: dict, kind_label: str, period: str, generated: datetime
         ("Bir nechta kanalda", num(aud.get("multi")) if aud.get("listed") else "—",
          f"ro'yxat qamrovi {aud['coverage']}%" if aud.get("coverage") is not None else "obunachilar ro'yxati yig'ilmoqda"),
     ])
+    if regions:
+        c.regions("Bo'limlar bo'yicha", regions)
     ranked = sorted((x for x in chans if x["reach"] is not None), key=lambda x: x["reach"], reverse=True)
     c.bars("Qamrov bo'yicha reyting", [(x["name"], x["reach"], f"{x['reach']}%") for x in ranked])
     by_subs = sorted(chans, key=lambda x: x["subs"] or 0, reverse=True)
-    c.table("Kanallar", ["Kanal", "Obunachi", "O'sish", "Postlar", "Qamrov"],
-            [[x["name"], num(x["subs"]), signed(x["growth"]), num(x["posts"]), num(x["reach"], "%")] for x in by_subs])
+    row = lambda x: [x["name"], num(x["subs"]), signed(x["growth"]), num(x["posts"]), num(x["reach"], "%")]  # noqa: E731
+    names = cmp_.get("region_names") or {}
+    if regions:  # kanallar bo'lim bo'yicha guruhlanadi, bo'limsizlari oxirida
+        body: list = []
+        for key, title in list(names.items()) + [("", "Bo'limsiz")]:
+            group = [x for x in by_subs if (x.get("region") if x.get("region") in names else "") == key]
+            if group:
+                body += [title] + [row(x) for x in group]
+    else:
+        body = [row(x) for x in by_subs]
+    c.table("Kanallar", ["Kanal", "Obunachi", "O'sish", "Postlar", "Qamrov"], body)
     return c.footer(generated)
 
 
