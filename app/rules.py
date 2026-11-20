@@ -53,6 +53,53 @@ def norm(text: str) -> str:
     return (text or "").lower().translate(APOSTROPHES)
 
 
+# Do'kon nomini jumla tuzilishidan ajratish: "Чорсудаги дўконимиз", "Кўкча дўконимиз",
+# "Абу Сахий ва Кўкча дўконларимиз", "Чорсу филиалимиз"
+# Faqat "дўконимиз / дўконларимиз / дўкони / филиалимиз / филиали" shakllari: "дўконларимизда",
+# "дўконларидан" (barcha do'konlarda sotuvda) kabi umumiy iboralar olinmaydi
+_STORE_NOUN = r"(?:дўкон|дукон|do'kon|doʻkon|dokon|филиал|filial)(?:ларимиз|имиз|лари|и|larimiz|imiz|lari|i)?(?![^\W\d_])"
+_DAGI = re.compile(r"([^\W\d_]{3,})(?:даги|dagi|деги)\s+" + _STORE_NOUN, re.I)
+_BEFORE = re.compile(r"([^\W\d_]{3,}(?:\s+[^\W\d_]{3,})?)(?:\s+(?:ва|va)\s+([^\W\d_]{3,}(?:\s+[^\W\d_]{3,})?))?\s+" + _STORE_NOUN, re.I)
+_STORE_STOP = {
+    "бошқа", "barcha", "барча", "ушбу", "шу", "бизнинг", "янги", "бош", "асосий", "ҳамма", "қолган", "ҳар", "бир", "бу", "ўша",
+    "boshqa", "ushbu", "bizning", "yangi", "bosh", "asosiy", "hamma", "qolgan", "har", "bu", "o'sha", "нашриётнинг", "нашриётининг",
+    "hilol", "nashr", "ҳилол", "нашр", "китоб", "kitob", "онлайн", "onlayn", "бугун", "эртага", "bugun", "ertaga", "ва", "va",
+}
+
+
+def _lat(word: str) -> str:
+    """Solishtirish uchun: kichik harf, lotin (eski alifbo), apostrofsiz."""
+    from .textops import to_latin
+
+    return re.sub(r"[ʻʼ'‘’`]", "", to_latin(norm(word), [], "old")[0])
+
+
+def store_names(body: str) -> set[str]:
+    """Postda tilga olingan do'kon nomlari (lotin, kichik harf). Sifatdoshlar ("ишлайдиган") va umumiy so'zlar olinmaydi."""
+    names = set()
+    for line in norm(body).split("\n"):
+        found = [m.group(1) for m in _DAGI.finditer(line)]
+        for m in _BEFORE.finditer(line):
+            found += [g for g in m.groups() if g]
+        for phrase in found:
+            words = phrase.split()
+            # do'kon so'zidan oldingi so'z umumiy so'z, sifatdosh yoki kelishikdagi so'z bo'lsa — bu nom emas
+            if not words or words[-1] in _STORE_STOP or re.search(r"(ган|gan|ни|ni|нинг|ning|га|ga|да|da|дан|dan)$", words[-1]):
+                continue
+            words = [w for w in words if w not in _STORE_STOP]
+            names.add(re.sub(r"(dagi|degi)$", "", _lat(" ".join(words[-2:]))))
+    return names
+
+
+def target_matches_store(target, names: set[str]) -> bool:
+    keys = [_lat(k.strip()) for k in f"{getattr(target, 'keywords', '') or ''}".split(",") if k.strip()]
+    for n in names:
+        for k in keys:
+            if len(k) >= 4 and len(n) >= 4 and (n == k or n.startswith(k) or k.startswith(n) or k in n.split()):
+                return True
+    return False
+
+
 def local_groups(body: str) -> tuple[set[int], bool]:
     """Postda qaysi shaharlarning do'koni tilga olingan va bosh do'kon tilga olinganmi.
 
@@ -157,15 +204,18 @@ def analyze(text: str, targets: list) -> Analysis:
         )
 
     cities, head = local_groups(body)
-    named = {t.id for t in targets if mentioned(t) or (cities & target_groups(t))}
-    is_local = bool(named or cities or head)
+    stores = store_names(body)
+    known_city = {_lat(n) for i in cities for n in CITY_GROUPS[i]}
+    stores -= {s for s in stores if any(s.startswith(c) for c in known_city if len(c) >= 4)}  # shahar nomlari alohida hisoblanadi
+    named = {t.id for t in targets if mentioned(t) or (cities & target_groups(t)) or target_matches_store(t, stores)}
+    is_local = bool(named or cities or head or stores)
     decisions = []
     for t in targets:
         if not is_local:
             decisions.append(TargetDecision(target_id=t.id, send=True, confidence=base, reason="Qolipga mos umumiy post" if base >= 0.8 else "Post qolipga mos emas"))
         elif t.id in named:
             decisions.append(TargetDecision(target_id=t.id, send=True, confidence=base, reason="Post shu filialga tegishli", scope="own"))
-        elif cities or named:
+        elif cities or named or stores:
             # Boshqa filialning e'loni: bu kanalga chiqmaydi va so'ralmaydi
             decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.9, reason="Post boshqa filialga tegishli", scope="other"))
         else:

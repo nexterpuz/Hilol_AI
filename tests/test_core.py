@@ -240,3 +240,22 @@ def test_replace_handle():
     assert o[b.offset:b.offset + b.length] == add_surrogate("✨ Hazrat")
     assert o[mm.offset:mm.offset + mm.length] == "@hilolnashr_uz"
     assert replace_handle("Matn @HilolNashr.", [], "hilolnashr", "hilolnashr_uz")[0] == "Matn @hilolnashr_uz."
+
+
+def test_store_name_routes_only_to_that_store():
+    from types import SimpleNamespace as T
+
+    from app.rules import analyze, store_names
+
+    post = "✨ Бугун ва эртага Чорсудаги дўконимиз ишламайди\n\n⏺ Бошқа дўконларимиз одатдаги тартибда ишлайди."
+    assert store_names(post) == {"chorsu"}
+    assert store_names("журнал тез кунда барча дўконларимизда сотувга чиқади") == set()
+    assert store_names("«Hilol-Nashr»нинг барча дўконларида нархлар бир хил") == set()
+    assert store_names("ушбу китобни дўконларимиздан сотиб олинг") == set()
+    qoqon = T(id=1, name="Hilol Nashr | Qo'qon", keywords="Qo'qon, Қўқон")
+    chorsu = T(id=2, name="Hilol Nashr | Chorsu", keywords="Chorsu, Чорсу")
+    got = {d.target_id: (d.send, d.scope) for d in analyze(post, [qoqon, chorsu]).decisions}
+    assert got == {1: (False, "other"), 2: (True, "own")}
+    # Chorsu kanali hali qo'shilmagan: hech qayerga chiqmaydi va hech kim so'ralmaydi
+    got = {d.target_id: (d.send, d.scope) for d in analyze(post, [qoqon]).decisions}
+    assert got == {1: (False, "other")}
