@@ -13,7 +13,10 @@
 </form>
 </section>
 <section class="card">
-<h2>Qabul qiluvchi kanallar</h2>
+<div class="row between"><h2>Qabul qiluvchi kanallar</h2>
+{% if targets %}<button class="btn" type="button" id="copy-list">Username ro'yxatini nusxalash</button>{% endif %}</div>
+<textarea id="list-text" readonly rows="{{ targets|length + 1 }}" hidden>{% for t in targets %}{{ loop.index }}. {{ t.name }} — @{{ t.username }}
+{% endfor %}</textarea>
 <div class="scroll">
 <table>
 <thead><tr><th>Kanal</th><th>Bo'lim</th><th>Username</th><th>Rejim</th><th>Menejer</th><th>Holat</th><th></th></tr></thead>
@@ -39,4 +42,16 @@
 </table>
 </div>
 </section>
+<script>
+(() => {
+  const btn = document.getElementById("copy-list");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const box = document.getElementById("list-text"), text = box.value.trim();
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Nusxalandi ✓"; }
+    catch (e) { box.hidden = false; box.select(); btn.textContent = "Belgilandi — Ctrl+C bosing"; }
+    setTimeout(() => btn.textContent = "Username ro'yxatini nusxalash", 2500);
+  });
+})();
+</script>
 {% endblock %}
