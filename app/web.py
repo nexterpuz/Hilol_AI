@@ -786,6 +786,13 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                 "detail": f"Model: {settings.ai_model}" if os.environ.get("ANTHROPIC_API_KEY") else "ANTHROPIC_API_KEY o'rnatilmagan",
             },
         ]
+        from . import ocr
+
+        ocr_ok, ocr_detail = ocr.status()
+        connected.append({
+            "name": "Rasm o'qish (OCR)", "ok": ocr_ok, "link": "/rules",
+            "role": "Ish tartibi rasmidagi do'konlar ro'yxatini o'qish (Claude kerak emas)", "detail": ocr_detail,
+        })
         is_pg = settings.database_url.startswith("postgresql")
         connected.append({
             "name": "Ma'lumotlar bazasi", "ok": not EPHEMERAL_DB, "link": "",

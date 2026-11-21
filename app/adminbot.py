@@ -393,7 +393,13 @@ class AdminBot:
         elif is_admin and text == "/holat":
             state = "TO'XTATILGAN" if await is_paused() else "ishlayapti"
             linked = "ulangan" if self.pipeline is not None else "ULANMAGAN"
-            await event.respond(f"Agent holati: {state}.\nTelegram akkaunt: {linked}.", buttons=await kb())
+            from . import ocr
+
+            ocr_ok, ocr_detail = ocr.status()
+            await event.respond(
+                f"Agent holati: {state}.\nTelegram akkaunt: {linked}.\nRasm o'qish: {'✅ ' if ocr_ok else '❌ '}{ocr_detail}.",
+                buttons=await kb(),
+            )
         elif text == "/hisobot":
             if is_admin or mine:
                 await event.respond("Qaysi davr uchun hisobot kerak?", buttons=[[

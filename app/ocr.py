@@ -27,3 +27,20 @@ async def image_text(data: bytes, timeout: float = 30) -> str:
     except Exception:  # vaqt tugashi, buzuq rasm va h.k. — post odatdagidek ishlanadi
         log.exception("OCR")
         return ""
+
+
+def status() -> tuple[bool, str]:
+    """Panel va bot uchun: rasm o'qish ishlaydimi va nima yetishmaydi."""
+    import subprocess
+
+    if not available():
+        return False, "Tesseract o'rnatilmagan — Railway yangilanishi tugaganini tekshiring"
+    try:
+        out = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=10)
+        langs = set((out.stdout + out.stderr).split())
+    except Exception:
+        return False, "Tesseract ishga tushmadi"
+    missing = [lang for lang in LANGS.split("+") if lang not in langs]
+    if missing:
+        return False, "Til fayli yo'q: " + ", ".join(missing)
+    return True, "Tesseract ishlayapti (o'zbek kirill + rus)"
