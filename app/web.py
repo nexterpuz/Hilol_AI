@@ -814,8 +814,10 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             srow = await s.get(Setting, "skip_words")
             orow = await s.get(Setting, "open_text")
             crow = await s.get(Setting, "closed_text")
+            vrow = await s.get(Setting, "open_text_vodiy")
         from .pipeline import (
-            DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_CLOSED_TEXT, DEFAULT_EVENT_WORDS, DEFAULT_OPEN_TEXT, DEFAULT_SKIP_WORDS,
+            DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_CLOSED_TEXT, DEFAULT_EVENT_WORDS, DEFAULT_OPEN_TEXT, DEFAULT_OPEN_TEXT_VODIY,
+            DEFAULT_SKIP_WORDS,
         )
 
         return page(
@@ -824,6 +826,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             event_words=erow.value if erow is not None else DEFAULT_EVENT_WORDS,
             skip_words=srow.value if srow is not None else DEFAULT_SKIP_WORDS,
             open_text=orow.value if orow is not None and orow.value.strip() else DEFAULT_OPEN_TEXT,
+            open_text_vodiy=vrow.value if vrow is not None and vrow.value.strip() else DEFAULT_OPEN_TEXT_VODIY,
             closed_text=crow.value if crow is not None and crow.value.strip() else DEFAULT_CLOSED_TEXT,
             saved=request.session.pop("saved", ""),
         )
@@ -843,9 +846,11 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
         return _go("/rules")
 
     @app.post("/rules/schedule-texts")
-    async def schedule_texts_save(request: Request, open_text: str = Form(""), closed_text: str = Form("")):
+    async def schedule_texts_save(
+        request: Request, open_text: str = Form(""), open_text_vodiy: str = Form(""), closed_text: str = Form(""),
+    ):
         async with Session() as s:
-            for key, value in (("open_text", open_text), ("closed_text", closed_text)):
+            for key, value in (("open_text", open_text), ("open_text_vodiy", open_text_vodiy), ("closed_text", closed_text)):
                 value = value.replace("\r\n", "\n").strip()  # bo'sh qoldirilsa — standart matn
                 row = await s.get(Setting, key)
                 if row is not None:

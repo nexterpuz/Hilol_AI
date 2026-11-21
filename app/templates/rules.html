@@ -18,6 +18,9 @@
 <form method="post" action="/rules/schedule-texts">
 <label for="open_text">Ishlaydigan do'kon kanaliga</label>
 <textarea id="open_text" name="open_text" rows="5">{{ open_text }}</textarea>
+<label for="open_text_vodiy">Ishlaydigan do'kon kanaliga — Vodiy</label>
+<textarea id="open_text_vodiy" name="open_text_vodiy" rows="5">{{ open_text_vodiy }}</textarea>
+<div class="muted">Bo'limi «Vodiy» bo'lgan kanallar uchun (bo'lim tanlanmagan bo'lsa — nomi Qo'qon, Marg'ilon, Andijon, Namangan, Farg'ona bo'lgan kanallar).</div>
 <label for="closed_text">Dam oladigan do'kon kanaliga</label>
 <textarea id="closed_text" name="closed_text" rows="6">{{ closed_text }}</textarea>
 <div class="row"><button class="btn primary" type="submit">Saqlash</button></div>

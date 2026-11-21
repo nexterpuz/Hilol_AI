@@ -195,6 +195,20 @@ def finish_text(text: str, ents: list | None, target, source_handle: str = SOURC
 # Ish tartibi posti ("Бугун қуйидаги дўконларимиз ишлайди: ...") o'rniga filial kanallariga chiqadigan matnlar.
 # Kirillda saqlanadi; lotin yozuvli kanalda o'z alifbosiga o'giriladi. Panelda (Qoidalar) o'zgartiriladi.
 DEFAULT_OPEN_TEXT = "📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!\n\nСиз азизлар учун хизматдамиз.\n\n🕘 Иш вақтимиз: 09:00–18:00"
+# Vodiy do'konlari soat 17:00 gacha ishlaydi
+DEFAULT_OPEN_TEXT_VODIY = DEFAULT_OPEN_TEXT.replace("09:00–18:00", "09:00–17:00")
+VODIY_CITIES = ("наманган", "андижон", "фарғона", "қўқон", "марғилон", "асака")
+
+
+def is_vodiy(target) -> bool:
+    """Kanal Vodiy bo'limidami: bo'lim tanlangan bo'lsa — shu, aks holda nomi/kalit so'zi bo'yicha."""
+    region = getattr(target, "region", "") or ""
+    if region:
+        return region == "vodiy"
+    cities = {i for i, names in enumerate(fallback.CITY_GROUPS) if names[0] in VODIY_CITIES}
+    return bool(fallback.target_groups(target) & cities)
+
+
 DEFAULT_CLOSED_TEXT = (
     "📚 Бугун якшанба — дўконимизда дам олиш куни.\n\n"
     "Шундай экан, дам олиш кунингиз янада мазмунли ўтиши учун камида 30 дақиқангизни китоб мутолаасига бағишланг.\n\n"
@@ -372,6 +386,8 @@ class Pipeline:
             event_words = row.value if row is not None else DEFAULT_EVENT_WORDS
             row = await s.get(Setting, "open_text")
             open_text = row.value if row is not None and row.value.strip() else DEFAULT_OPEN_TEXT
+            row = await s.get(Setting, "open_text_vodiy")
+            open_text_vodiy = row.value if row is not None and row.value.strip() else DEFAULT_OPEN_TEXT_VODIY
             row = await s.get(Setting, "closed_text")
             closed_text = row.value if row is not None and row.value.strip() else DEFAULT_CLOSED_TEXT
             pause_row = await s.get(Setting, "paused")
@@ -459,7 +475,7 @@ class Pipeline:
                 if schedule is not None and not t.mirror:
                     listed_open, items = schedule
                     is_open = fallback.target_in_list(t, items) == listed_open
-                    override = open_text if is_open else closed_text
+                    override = (open_text_vodiy if is_vodiy(t) else open_text) if is_open else closed_text
                     action, quiet, branch, local = ("ask" if t.mode == "manual" else "send"), True, False, False
                     reason = "Ish tartibi: do'kon ochiq" if is_open else "Ish tartibi: do'kon dam oladi"
                 if t.mirror:

@@ -1209,6 +1209,8 @@ def test_store_schedule_post_sends_open_or_closed_text(monkeypatch):
     sent = {t: (text, f) for t, text, f in c.sent if t.startswith("sc_")}
     assert set(sent) == {"sc_q", "sc_s", "sc_x", "sc_j", "sc_n", "sc_lat"}
     assert sent["sc_q"][0].startswith("📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!") and sent["sc_q"][0].endswith("@sc_q")
+    assert "09:00–17:00" in sent["sc_q"][0]  # Vodiy (Qo'qon) — 17:00 gacha
+    assert "09:00–18:00" in sent["sc_s"][0] and "09:00–18:00" in sent["sc_x"][0]
     assert sent["sc_q"][1] is None  # rasm emas, oddiy matnli xabar
     assert sent["sc_s"][0] == "📚 Bugun yakşanba bölişiga qaramay, dökonimiz oçiq!\n\nSiz azizlar uçun xizmatdamiz.\n\n🕘 Iş vaqtimiz: 09:00–18:00\n\n@sc_s"
     assert "Bugun yakshanba boʻlishiga qaramay, doʻkonimiz ochiq!" in sent["sc_x"][0]
