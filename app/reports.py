@@ -465,6 +465,98 @@ def summary_text(targets: list, counts: dict) -> str:
     return "\n".join(lines)
 
 
+REGION_LABELS = {"all": "Barcha filiallar", "toshkent": "Toshkent", "vodiy": "Vodiy", "voha": "Voha"}
+PER_CHANNEL = 6  # rasmda har kanal uchun ko'rsatiladigan postlar soni
+
+
+def region_of(target) -> str:
+    """Kanal bo'limi: panelda tanlangani; tanlanmagan bo'lsa — Vodiy shaharlari nomidan, aks holda "" (bo'limsiz)."""
+    if getattr(target, "region", ""):
+        return target.region
+    from .pipeline import is_vodiy
+
+    return "vodiy" if is_vodiy(target) else ""
+
+
+def _first_line(text: str) -> str:
+    for line in (text or "").split("\n"):
+        c = clean(line)
+        if len(c) > 2:
+            return c
+    return ""
+
+
+async def pending_board(region: str, now_local: datetime | None = None) -> dict:
+    """Rasm uchun: tanlangan bo'limdagi har bir kanal va unda kutayotgan postlar (eskisi yuqorida)."""
+    now_local = now_local or datetime.now(TASHKENT)
+    async with Session() as s:
+        targets = [t for t in (await s.execute(select(Target).where(Target.active).order_by(Target.name))).scalars() if not t.mirror]
+        rows = list((await s.execute(
+            select(Delivery, SourcePost).join(SourcePost, SourcePost.id == Delivery.post_id)
+            .where(Delivery.status == "pending", SourcePost.deleted.is_(False)).order_by(Delivery.created_at)
+        )).all())
+    chosen = targets if region == "all" else [t for t in targets if region_of(t) == region]
+    unassigned = sum(1 for t in targets if not region_of(t)) if region != "all" else 0
+    items: dict = {t.id: [] for t in chosen}
+    for d, post in rows:
+        if d.target_id not in items:
+            continue
+        created = d.created_at if d.created_at.tzinfo else d.created_at.replace(tzinfo=timezone.utc)
+        local = created.astimezone(TASHKENT)
+        text = _first_line(d.override_text or post.text) or "(matnsiz post: rasm, video yoki audio)"
+        items[d.target_id].append({"when": local.strftime("%d.%m %H:%M"), "days": (now_local.date() - local.date()).days, "text": text, "why": d.reason or ""})
+    channels = [{"name": t.name, "manager": bool(t.manager_ids), "posts": items[t.id]} for t in chosen]
+    channels.sort(key=lambda c: (-len(c["posts"]), c["name"]))
+    return {"region": region, "label": REGION_LABELS.get(region, region), "channels": channels, "unassigned": unassigned,
+            "total": sum(len(c["posts"]) for c in channels)}
+
+
+def render_pending(board: dict, generated: datetime) -> bytes:
+    waiting = [c for c in board["channels"] if c["posts"]]
+    idle = [c for c in board["channels"] if not c["posts"]]
+    rows = sum(min(len(c["posts"]), PER_CHANNEL) + (1 if len(c["posts"]) > PER_CHANNEL else 0) for c in waiting)
+    c = Canvas(900 + len(waiting) * 190 + rows * 64 + (200 if idle else 0))
+    c.header(f"Kutayotgan postlar · {board['label']}", f"{generated.day} {MONTHS[generated.month - 1]} {generated.year}, {generated:%H:%M}")
+    oldest = max((p["days"] for ch in waiting for p in ch["posts"]), default=None)
+    c.kpis([
+        ("Kutayotgan postlar", num(board["total"]), f"{len(waiting)} ta kanalda"),
+        ("Eng eskisi", f"{oldest} kun" if oldest is not None else "—", "menejer qarorini kutmoqda" if oldest is not None else "kutayotgan post yo'q"),
+    ])
+    for ch in waiting:
+        shown = ch["posts"][:PER_CHANNEL]
+        more = len(ch["posts"]) - len(shown)
+        top = 104 if ch["manager"] else 140  # "menejer bog'lanmagan" yozuvi uchun joy
+        h = top + 6 + len(shown) * 64 + (50 if more else 0)
+        x0, y0, x1, _ = c.card(h)
+        c.d.text((x0 + 36, y0 + 28), fit(c.d, clean(ch["name"]), font(30, "Bold"), x1 - x0 - 320), font=font(30, "Bold"), fill=TEXT)
+        badge = f"{len(ch['posts'])} ta post"
+        bw = c.d.textlength(badge, font=font(24, "SemiBold")) + 36
+        c.d.rounded_rectangle((x1 - 36 - bw, y0 + 26, x1 - 36, y0 + 70), radius=22, fill=GREEN_SOFT)
+        c.d.text((x1 - 36 - bw + 18, y0 + 33), badge, font=font(24, "SemiBold"), fill=GREEN_DARK)
+        if not ch["manager"]:
+            c.d.text((x0 + 36, y0 + 78), "Menejer botga bog'lanmagan — eslatma unga yetmaydi", font=font(21, "SemiBold"), fill=WARN)
+        for i, p in enumerate(shown):
+            y = y0 + top + i * 64
+            c.d.line((x0 + 36, y - 10, x1 - 36, y - 10), fill=LINE, width=2)
+            age = "bugun" if p["days"] <= 0 else f"{p['days']} kun"
+            c.d.text((x0 + 36, y + 2), p["when"], font=font(21), fill=MUTED)
+            c.d.text((x0 + 36, y + 28), age, font=font(19, "SemiBold"), fill=WARN if p["days"] >= 7 else MUTED)
+            c.d.text((x0 + 200, y + 10), fit(c.d, p["text"], font(24), x1 - x0 - 240), font=font(24), fill=TEXT)
+        if more:
+            c.d.text((x0 + 200, y0 + top + len(shown) * 64), f"+ yana {more} ta post — menejer botida", font=font(21), fill=MUTED)
+    if not waiting:
+        c.rows("Holat", [], "Bu bo'limda kutayotgan post yo'q. Barcha menejerlar postlarni ko'rib chiqqan.")
+    if idle:
+        names = ", ".join(clean(ch["name"]) for ch in idle)
+        x0, y0, x1, _ = c.card(150)
+        c.d.text((x0 + 36, y0 + 28), f"Kutayotgan post yo'q ({len(idle)})", font=font(26, "SemiBold"), fill=TEXT)
+        c.d.text((x0 + 36, y0 + 76), fit(c.d, names, font(22), x1 - x0 - 72), font=font(22), fill=MUTED)
+    if board.get("unassigned"):
+        c.d.text((PAD, c.y), f"{board['unassigned']} ta kanalga bo'lim tanlanmagan — ular faqat «Barcha filiallar»da ko'rinadi.", font=font(20), fill=WARN)
+        c.y += 44
+    return c.footer(generated)
+
+
 async def send_pending_reminders(notifier) -> int:
     from telethon import Button
 

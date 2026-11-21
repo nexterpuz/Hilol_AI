@@ -38,8 +38,9 @@ def keyboard(is_admin: bool, is_manager: bool, paused: bool = False):
     if is_manager:
         rows.append([Button.text(BTN_RATING)])
     second = []
-    if is_manager:
+    if is_manager or is_admin:
         second.append(Button.text(BTN_QUEUE))
+    if is_manager:
         second.append(Button.text(BTN_SUGGEST))
     if is_admin:
         second.append(Button.text(BTN_STATE))
@@ -439,6 +440,12 @@ class AdminBot:
         elif text in ("/hisob_kun", "/hisob_hafta", "/hisobot_oy", "/hisob_oy"):
             kind = {"/hisob_kun": "daily", "/hisob_hafta": "weekly"}.get(text, "monthly")
             await self._report_choice(event, kind)
+        elif is_admin and text == "/navbat":
+            rows = [[Button.inline("Barcha filiallar", data="pq:all")],
+                    [Button.inline("Toshkent", data="pq:toshkent"), Button.inline("Vodiy", data="pq:vodiy"), Button.inline("Voha", data="pq:voha")]]
+            if mine:
+                rows.append([Button.inline("Mening filialim (tugmalar bilan)", data="pend:show")])
+            await event.respond("Qaysi bo'lim bo'yicha kutayotgan postlarni ko'rasiz?", buttons=rows)
         elif text.startswith("/start") or text == "/navbat":
             if is_admin and text.startswith("/start"):
                 state = "TO'XTATILGAN" if await is_paused() else "ishlayapti"
@@ -463,6 +470,20 @@ class AdminBot:
         action, _, raw_id = event.data.decode().partition(":")
         if action == "rep":
             await self._report_choice(event, raw_id)
+            return
+        if action == "pq":
+            if event.sender_id not in settings.admin_ids:
+                await event.answer("Ruxsat yo'q", alert=True)
+                return
+            from datetime import datetime
+
+            from . import reports
+
+            await event.answer("Rasm tayyorlanmoqda…")
+            now_local = datetime.now(reports.TASHKENT)
+            board = await reports.pending_board(raw_id, now_local)
+            image = reports.render_pending(board, now_local)
+            await self.send_photo([event.sender_id], image, f"Kutayotgan postlar · {board['label']}: {board['total']} ta")
             return
         if action == "pend":
             mine = await self._targets_of(event.sender_id)

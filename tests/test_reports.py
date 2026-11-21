@@ -84,7 +84,7 @@ def test_bot_keyboard_and_button_presses(monkeypatch):
         return [b.button.text for row in rows for b in row]
 
     assert labels(keyboard(False, True)) == [BTN_REPORT, adminbot.BTN_RATING, BTN_QUEUE, adminbot.BTN_SUGGEST]
-    assert labels(keyboard(True, False)) == [BTN_REPORT, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
+    assert labels(keyboard(True, False)) == [BTN_REPORT, BTN_QUEUE, BTN_STATE, BTN_STOP, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
     assert labels(keyboard(True, True, paused=True)) == [BTN_REPORT, adminbot.BTN_RATING, BTN_QUEUE, adminbot.BTN_SUGGEST, BTN_STATE, BTN_RESUME, adminbot.BTN_MANAGERS, adminbot.BTN_MESSAGE]
 
     class Ev:
@@ -575,3 +575,51 @@ def test_pending_counts_skip_deleted_and_mirror():
 
     (a, m), tids, counts = asyncio.run(run())
     assert counts[a] == 1 and a in tids and m not in tids
+
+
+def test_pending_board_by_region_and_image():
+    import asyncio
+    import io
+    from datetime import datetime
+
+    from PIL import Image
+    from sqlalchemy import update
+
+    from app import reports
+    from app.db import Delivery, Session, SourcePost, Target, init_db
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            q = Target(name="PB Qo'qon", username="pb_q", manager_ids={"1": "a"})  # bo'limsiz, lekin Vodiy shahri
+            v = Target(name="PB Voha", username="pb_v", region="voha")
+            t = Target(name="PB Chorsu", username="pb_t")  # bo'limsiz
+            post, old = SourcePost(chat_id=2, msg_ids=[9201], text="✨ Жума муборак!\n\n@hilolnashr"), SourcePost(chat_id=2, msg_ids=[9202], text="")
+            s.add_all([q, v, t, post, old])
+            await s.flush()
+            s.add_all([Delivery(post_id=post.id, target_id=q.id, status="pending"), Delivery(post_id=old.id, target_id=q.id, status="pending"),
+                       Delivery(post_id=post.id, target_id=v.id, status="pending")])
+            await s.commit()
+        now = datetime.now(reports.TASHKENT)
+        res = {r: await reports.pending_board(r, now) for r in ("all", "vodiy", "voha", "toshkent")}
+        async with Session() as s:  # yaratilganlarni to'liq o'chiramiz: boshqa testlar umumiy bazada ishlaydi
+            from sqlalchemy import delete
+
+            ids = [x.id for x in (q, v, t)]
+            await s.execute(delete(Delivery).where(Delivery.target_id.in_(ids)))
+            await s.execute(delete(SourcePost).where(SourcePost.id.in_((post.id, old.id))))
+            await s.execute(delete(Target).where(Target.id.in_(ids)))
+            await s.commit()
+        return res, now
+
+    res, now = asyncio.run(run())
+    assert res["all"]["total"] == 3 and len(res["all"]["channels"]) == 3
+    vodiy = res["vodiy"]
+    assert [c["name"] for c in vodiy["channels"]] == ["PB Qo'qon"] and vodiy["total"] == 2 and vodiy["unassigned"] == 1
+    texts = [p["text"] for p in vodiy["channels"][0]["posts"]]
+    assert "Жума муборак!" in texts[0] and texts[1].startswith("(matnsiz post")
+    assert res["voha"]["total"] == 1 and res["toshkent"]["total"] == 0
+    for r in res.values():
+        img = Image.open(io.BytesIO(reports.render_pending(r, now)))
+        assert img.width == 1080
