@@ -23,6 +23,8 @@
 <div class="muted">Bo'limi «Vodiy» bo'lgan kanallar uchun (bo'lim tanlanmagan bo'lsa — nomi Qo'qon, Marg'ilon, Andijon, Namangan, Farg'ona bo'lgan kanallar).</div>
 <label for="closed_text">Dam oladigan do'kon kanaliga</label>
 <textarea id="closed_text" name="closed_text" rows="6">{{ closed_text }}</textarea>
+<label class="check"><input type="checkbox" name="ocr_confirm" value="1" {{ 'checked' if ocr_confirm }}> Ro'yxat rasmda bo'lsa (izohda emas), bot rasmni o'qiydi va natijani avval menga botda ko'rsatsin — «Yuborish» ni bosgandan keyin chiqsin</label>
+<div class="muted" style="margin-top:-8px">O'chirilsa, rasmdan o'qilgan ro'yxat bo'yicha matnlar darhol chiqadi. Rasmni o'qish xato qilishi mumkin, shuning uchun bir necha hafta tekshirib ko'ring.</div>
 <div class="row"><button class="btn primary" type="submit">Saqlash</button></div>
 </form>
 </section>

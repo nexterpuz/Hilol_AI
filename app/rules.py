@@ -272,6 +272,29 @@ def store_schedule(body: str) -> tuple[bool, list[str]] | None:
     return None
 
 
+def image_schedule(ocr_text: str) -> tuple[bool, list[str]] | None:
+    """Rasmdan o'qilgan matndagi ish tartibi: sarlavha bir necha qatorga bo'lingan, ro'yxat raqamli va xarita yozuvlari bilan.
+
+    Sarlavhadan keyingi barcha qatorlar ("Бошқа дўконларимиз ..." gacha) nomzod sifatida qaytadi; kanal nomi bilan
+    solishtirish target_in_list() da. Kamida 2 ta qator bo'lmasa — None.
+    """
+    low = norm(ocr_text)
+    m = _SCHEDULE_HEAD.search(re.sub(r"\s+", " ", low))
+    if not m:
+        return None
+    flat = re.sub(r"\s+", " ", low)
+    rest = flat[m.end():]
+    stop = re.search(r"(?:бошқа|бошка|boshqa)\s+(?:дўкон|дукон|do'kon|dokon)", rest)
+    if stop:
+        rest = rest[:stop.start()]
+    items = [w for w in re.split(r"[^\w'ʻ]+", rest) if len(w) >= 4]
+    # "Абу Сахий" kabi ikki so'zli nomlar uchun qo'shni juftliklar ham
+    items += [f"{a} {b}" for a, b in zip(items, items[1:])]
+    if len(items) < 2:
+        return None
+    return m.group("verb").startswith(("ишлайди", "ishlaydi")), items
+
+
 def _close(a: str, b: str) -> bool:
     """Bir xil do'kon nomi: teng, biri ikkinchisining boshi yoki 1 harf farq ("Сергели" ≈ "Sergili")."""
     if a == b or (min(len(a), len(b)) >= 4 and (a.startswith(b) or b.startswith(a))):

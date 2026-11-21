@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from telethon import TelegramClient
 from telethon.tl.types import MessageMediaWebPage
 
-from . import ai, rules as fallback
+from . import ai, ocr, rules as fallback
 from .config import settings
 from .db import Decision, Delivery, Rule, Seen, Setting, Session, SourcePost, Target, log as db_log, now
 from .textops import append_template, build_post, fits, replace_handle, to_latin, message_to_template, parse_message_link
@@ -390,6 +390,8 @@ class Pipeline:
             open_text_vodiy = row.value if row is not None and row.value.strip() else DEFAULT_OPEN_TEXT_VODIY
             row = await s.get(Setting, "closed_text")
             closed_text = row.value if row is not None and row.value.strip() else DEFAULT_CLOSED_TEXT
+            row = await s.get(Setting, "ocr_confirm")
+            ocr_confirm = not (row is not None and row.value == "0")  # rasmdan o'qilgan ro'yxat avval adminga ko'rsatiladi
             pause_row = await s.get(Setting, "paused")
             paused = bool(pause_row and pause_row.value == "1")
 
@@ -411,6 +413,14 @@ class Pipeline:
         local_rules = fallback.analyze(text, targets) if text and not by_rules else None
         # "Бугун қуйидаги дўконларимиз ишлайди: – ...": har bir filialga o'z holati haqida tayyor matn
         schedule = fallback.store_schedule(text) if text else None
+        from_image = False
+        if schedule is None and len(text) < 400:
+            # Ro'yxat matnda emas, rasmda bo'lishi mumkin: rasmni o'qib ko'ramiz (kitob postlarining izohi uzun bo'ladi)
+            photo = next((m for m in msgs if m.photo), None)
+            if photo is not None:
+                schedule = await self._image_schedule(photo)
+                from_image = schedule is not None
+        opened, closed = [], []
 
         async with Session() as s:
             post = SourcePost(
@@ -478,6 +488,11 @@ class Pipeline:
                     override = (open_text_vodiy if is_vodiy(t) else open_text) if is_open else closed_text
                     action, quiet, branch, local = ("ask" if t.mode == "manual" else "send"), True, False, False
                     reason = "Ish tartibi: do'kon ochiq" if is_open else "Ish tartibi: do'kon dam oladi"
+                    (opened if is_open else closed).append(t.name)
+                    if from_image:
+                        reason += " (rasmdan o'qildi)"
+                        if ocr_confirm and action == "send":
+                            action = "ask"  # bitta umumiy xabar bilan adminga ko'rsatiladi
                 if t.mirror:
                     # To'liq nusxa kanali: har bir post filtrsiz va so'rovsiz
                     action, reason, quiet, branch, local = "send", "To'liq nusxa kanali", True, False, False
@@ -514,6 +529,38 @@ class Pipeline:
                 await self.notifier.ask_branch(delivery_id, target, views.get(target.id) or "(matnsiz post)", local=local)
             elif self.notifier and not quiet:
                 await self.notifier.ask(delivery_id, target, views.get(target.id) or "(matnsiz post)", reason, skipped=action == "skip")
+        if from_image:
+            await db_log("ocr_schedule", f"post={post_id} ochiq={len(opened)} dam={len(closed)} tasdiq={'ha' if ocr_confirm else 'yoq'}")
+            if ocr_confirm and self.notifier and hasattr(self.notifier, "ask_schedule"):
+                await self.notifier.ask_schedule(post_id, opened, closed)
+
+    async def _image_schedule(self, msg):
+        """Rasmdagi "Бугун қуйидаги дўконларимиз ишлайди" ro'yxati yoki None."""
+        if not ocr.available():
+            return None
+        try:
+            data = await self.client.download_media(msg, file=bytes)
+        except Exception:
+            log.exception("Rasmni yuklab bo'lmadi")
+            return None
+        text = await ocr.image_text(data)
+        return fallback.image_schedule(text) if text else None
+
+    async def decide_schedule(self, post_id: int, send: bool) -> int:
+        """Rasmdan o'qilgan ish tartibi bo'yicha admin qarori: kutayotgan barcha nusxalar yuboriladi yoki rad etiladi."""
+        async with Session() as s:
+            ids = list((await s.execute(
+                select(Delivery.id).where(Delivery.post_id == post_id, Delivery.status == "pending", Delivery.override_text.isnot(None))
+            )).scalars())
+        done = 0
+        for delivery_id in ids:
+            if send:
+                done += await self.publish(delivery_id)
+            else:
+                await self.reject(delivery_id)
+                done += 1
+        await db_log("ocr_schedule_" + ("sent" if send else "rejected"), f"post={post_id} {done} ta")
+        return done
 
     async def _log_ai_failure(self) -> None:
         """AI xatosini jurnalga yozadi; bir xil xato har postda takrorlanmasligi uchun 6 soatda bir marta."""

@@ -815,6 +815,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             orow = await s.get(Setting, "open_text")
             crow = await s.get(Setting, "closed_text")
             vrow = await s.get(Setting, "open_text_vodiy")
+            ocrow = await s.get(Setting, "ocr_confirm")
         from .pipeline import (
             DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_CLOSED_TEXT, DEFAULT_EVENT_WORDS, DEFAULT_OPEN_TEXT, DEFAULT_OPEN_TEXT_VODIY,
             DEFAULT_SKIP_WORDS,
@@ -827,6 +828,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             skip_words=srow.value if srow is not None else DEFAULT_SKIP_WORDS,
             open_text=orow.value if orow is not None and orow.value.strip() else DEFAULT_OPEN_TEXT,
             open_text_vodiy=vrow.value if vrow is not None and vrow.value.strip() else DEFAULT_OPEN_TEXT_VODIY,
+            ocr_confirm=not (ocrow is not None and ocrow.value == "0"),
             closed_text=crow.value if crow is not None and crow.value.strip() else DEFAULT_CLOSED_TEXT,
             saved=request.session.pop("saved", ""),
         )
@@ -848,8 +850,14 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
     @app.post("/rules/schedule-texts")
     async def schedule_texts_save(
         request: Request, open_text: str = Form(""), open_text_vodiy: str = Form(""), closed_text: str = Form(""),
+        ocr_confirm: str = Form(""),
     ):
         async with Session() as s:
+            row = await s.get(Setting, "ocr_confirm")
+            if row is not None:
+                row.value = "1" if ocr_confirm else "0"
+            else:
+                s.add(Setting(key="ocr_confirm", value="1" if ocr_confirm else "0"))
             for key, value in (("open_text", open_text), ("open_text_vodiy", open_text_vodiy), ("closed_text", closed_text)):
                 value = value.replace("\r\n", "\n").strip()  # bo'sh qoldirilsa — standart matn
                 row = await s.get(Setting, key)

@@ -1221,3 +1221,77 @@ def test_store_schedule_post_sends_open_or_closed_text(monkeypatch):
     assert "– Xadra;" in sent["sc_lat"][0] and "@hilolnashr_uz" in sent["sc_lat"][0]  # to'liq nusxa — asl post
     assert not [m for m in bot.msgs if isinstance(m, tuple) and str(m[2]).startswith("sc_")]  # hech kim so'ralmadi
     assert not [e for e in c.edits if e[0] in ("sc_q", "sc_s", "sc_x", "sc_j", "sc_n")]  # tayyor matn tahrirlanmaydi
+
+
+
+# Tesseract'ning haqiqiy ish tartibi rasmidan o'qigan matni (xarita yozuvlari va shovqin bilan)
+OCR_SCHEDULE = 'Бугун қуйидаги\n\nдўконларимиз ишлайди\n\n(2 ) Нукус\n\n© Бош дўкон\n\nка\n\n© Кўкча\n@ Самарқанд\n\nB Бухоро\n\n© Андижон\n\nи“\nТошкент { 14 }\n\nБухоро (7) (5) самарқанд\n\nҚарши (в)\n\nQB хадра\nO Абу Сахий\nО қарши\nО наманган\n\n© Нукус\n\nНаманган\n\nиа\n9 } Андижон\n\nҚўқон\n\n'
+
+
+def test_schedule_image_is_read_and_confirmed_by_admin(monkeypatch):
+    """Ro'yxat rasmda: bot rasmni o'qiydi, adminga bitta xabar; "Yuborish" dan keyin har kanalga o'z matni."""
+    from sqlalchemy import update
+
+    from app import ocr
+    from app.pipeline import Pipeline
+
+    async def no_ai(*a, **k):
+        return None
+
+    async def fake_ocr(data, timeout=30):
+        assert data == b"rasm"
+        return OCR_SCHEDULE
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    monkeypatch.setattr(ocr, "available", lambda: True)
+    monkeypatch.setattr(ocr, "image_text", fake_ocr)
+
+    class PhotoClient(Client):
+        async def download_media(self, msg, file=None):
+            return b"rasm"
+
+    class ScheduleBot(Bot):
+        async def ask_schedule(self, post_id, opened, closed):
+            self.msgs.append(("schedule", post_id, sorted(opened), sorted(closed)))
+
+    store, bot = {1801: mk(1801, "#маълумот\n\n@hilolnashr", photo_id=1801)}, ScheduleBot()
+    c = PhotoClient(store)
+    result = {}
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([
+                Target(name="Hilol Nashr | Nukus", username="oc_n"), Target(name="Hilol Nashr | Marg'ilon", username="oc_m"),
+                Target(name="Hilol Nashr | Qo'qon", username="oc_q", manager_ids={"7903": "1"}),
+                Target(name="Hilol Nashr | Chorsu Xadra", username="oc_x", latin=True, latin_style="old"),
+                Target(name="Hilol Nashr (lotin)", username="oc_lat", mirror=True, latin=True, signature_html="@hilolnashr_uz"),
+            ])
+            await s.commit()
+        p = Pipeline(c, "manba", bot, premium=True)
+        await p.on_new([store[1801]])
+        result["before"] = [t for t, _, _ in c.sent if t.startswith("oc_")]
+        post_id = next(m for m in bot.msgs if m[0] == "schedule")[1]
+        result["approved"] = await p.decide_schedule(post_id, True)
+
+    asyncio.run(run())
+    assert result["before"] == ["oc_lat"]  # tasdiqgacha faqat to'liq nusxa kanaliga (asl rasm)
+    sch = next(m for m in bot.msgs if m[0] == "schedule")
+    assert sch[2] == ["Hilol Nashr | Chorsu Xadra", "Hilol Nashr | Nukus", "Hilol Nashr | Qo'qon"]
+    assert sch[3] == ["Hilol Nashr | Marg'ilon"]  # rasmda yo'q — dam oladi
+    assert not [m for m in bot.msgs if m[0] in ("ask", "branch")]  # 20 ta alohida so'rov emas, bitta xabar
+    assert result["approved"] == 4
+    sent = {t: (x, f) for t, x, f in c.sent if t.startswith("oc_")}
+    assert "дўконимиз очиқ" in sent["oc_n"][0] and "09:00–18:00" in sent["oc_n"][0] and sent["oc_n"][1] is None
+    assert "09:00–17:00" in sent["oc_q"][0]
+    assert "dam olish kuni" not in sent["oc_x"][0] and "doʻkonimiz ochiq" in sent["oc_x"][0]
+    assert "дам олиш куни" in sent["oc_m"][0]
+    assert sent["oc_lat"][1] == "media-1801"
+
+
+def test_image_schedule_parser():
+    from app import rules
+
+    assert rules.image_schedule("Янги китоб ҳақида\nмуаллиф ва нашр") is None
+    assert rules.image_schedule(OCR_SCHEDULE)[0] is True

@@ -148,6 +148,16 @@ class AdminBot:
             self._buttons(delivery_id, skipped),
         )
 
+    async def ask_schedule(self, post_id: int, opened: list[str], closed: list[str]) -> None:
+        """Rasmdan o'qilgan ish tartibini bitta xabar bilan bosh adminga tasdiqlatadi."""
+        text = (
+            "📷 Bosh kanalga ish tartibi rasmi tushdi. Rasmdan o'qidim:\n\n"
+            f"✅ Ochiq ({len(opened)}): {', '.join(opened) or '—'}\n\n"
+            f"💤 Dam oladi ({len(closed)}): {', '.join(closed) or '—'}\n\n"
+            "Rasm bilan solishtiring. To'g'ri bo'lsa — har bir kanalga o'z matni yuboriladi."
+        )
+        await self.say(text, [Button.inline("Yuborish", data=f"sch:ok{post_id}"), Button.inline("Bekor qilish", data=f"sch:no{post_id}")])
+
     async def ask_branch(self, delivery_id: int, target, text: str, local: bool = False) -> None:
         """Postni filial menejer(lar)iga tasdiqlash uchun yuboradi; menejer bog'lanmagan bo'lsa — bosh adminga."""
         if local == "review":
@@ -420,6 +430,20 @@ class AdminBot:
         action, _, raw_id = event.data.decode().partition(":")
         if action == "rep":
             await self._report_choice(event, raw_id)
+            return
+        if action == "sch":
+            if event.sender_id not in settings.admin_ids:
+                await event.answer("Ruxsat yo'q", alert=True)
+                return
+            if self.pipeline is None or not raw_id[2:].isdigit():
+                await event.answer("Agent hozir ulanmagan", alert=True)
+                return
+            send = raw_id.startswith("ok")
+            n = await self.pipeline.decide_schedule(int(raw_id[2:]), send)
+            note = f"{n} ta kanalga yuborildi" if send else "Bekor qilindi"
+            await event.answer(note)
+            msg = await event.get_message()
+            await event.edit(f"{msg.message}\n\n— {note}", buttons=None, parse_mode=None)
             return
         if action == "msg":
             if event.sender_id not in settings.admin_ids:
