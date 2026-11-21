@@ -255,6 +255,21 @@ def is_file(msg) -> bool:
     return bool(msg.photo or msg.document)
 
 
+def media_kind(msg) -> str | None:
+    """Dumaloq video yoki audio: bunday post har doim filial menejeri tasdig'idan keyin chiqadi."""
+    if getattr(msg, "video_note", None):
+        return "video_note"
+    if getattr(msg, "voice", None):
+        return "voice"
+    if getattr(msg, "audio", None):
+        return "audio"
+    return None
+
+
+MEDIA_NAMES = {"video_note": "dumaloq video", "voice": "ovozli xabar", "audio": "audio"}
+PREVIEW_LIMIT = 20 * 1024 * 1024  # menejerga botda ko'rsatiladigan fayl hajmi chegarasi
+
+
 def is_supported(msg) -> bool:
     return is_file(msg) or msg.media is None or isinstance(msg.media, MessageMediaWebPage)
 
@@ -422,6 +437,8 @@ class Pipeline:
                 schedule = await self._image_schedule(photo)
                 from_image = schedule is not None
         opened, closed = [], []
+        av_msg = next((m for m in msgs if media_kind(m)), None)
+        av_kind = media_kind(av_msg) if av_msg is not None else None
 
         async with Session() as s:
             post = SourcePost(
@@ -482,6 +499,12 @@ class Pipeline:
                 if skip_word:
                     # Faqat bosh kanal uchun (masalan, vakansiya): filialga chiqmaydi, so'ralmaydi
                     action, reason, quiet, branch, local = "skip", f"Faqat bosh kanal uchun («{skip_word}»)", True, False, False
+                if av_kind is not None and not t.mirror and action != "skip" and t.mode != "manual":
+                    # Dumaloq video / audio: har bir filial menejeri o'zi ko'rib, tasdiqlasa chiqadi
+                    if t.manager_ids:
+                        action, reason, quiet, branch, local = "ask", "Filial tasdig'i kutilmoqda", False, True, "media"
+                    else:
+                        action, reason, quiet = "ask", f"{MEDIA_NAMES[av_kind].capitalize()}: filial menejeri botga bog'lanmagan", False
                 override = None
                 if schedule is not None and not t.mirror:
                     listed_open, items = schedule
@@ -523,17 +546,31 @@ class Pipeline:
                 views = {t.id: f"(matnsiz post: {kind}{', ' + str(len(msgs)) + ' ta' if len(msgs) > 1 else ''})" for t in targets}
 
         await db_log("new_post", f"post={post_id} ids={ids}")
+        attachment = await self._attachment(av_msg, av_kind) if av_kind and self.notifier else None
         for delivery_id, target, action, reason, quiet, branch, local in plan:
+            extra = {"attachment": attachment} if attachment and not target.mirror and action == "ask" else {}
             if action == "send":
                 await self.publish(delivery_id)
             elif self.notifier and branch:
-                await self.notifier.ask_branch(delivery_id, target, views.get(target.id) or "(matnsiz post)", local=local)
+                await self.notifier.ask_branch(delivery_id, target, views.get(target.id) or "(matnsiz post)", local=local, **extra)
             elif self.notifier and not quiet:
-                await self.notifier.ask(delivery_id, target, views.get(target.id) or "(matnsiz post)", reason, skipped=action == "skip")
+                await self.notifier.ask(delivery_id, target, views.get(target.id) or "(matnsiz post)", reason, skipped=action == "skip", **extra)
         if from_image:
             await db_log("ocr_schedule", f"post={post_id} ochiq={len(opened)} dam={len(closed)} tasdiq={'ha' if ocr_confirm else 'yoq'}")
             if ocr_confirm and self.notifier and hasattr(self.notifier, "ask_schedule"):
                 await self.notifier.ask_schedule(post_id, opened, closed)
+
+    async def _attachment(self, msg, kind: str) -> dict:
+        """Menejerga botda ko'rsatish uchun: fayl (kichik bo'lsa), turi, nomi va bosh kanaldagi post havolasi."""
+        size = getattr(getattr(msg, "file", None), "size", None) or 0
+        data = None
+        if size <= PREVIEW_LIMIT:
+            try:
+                data = await self.client.download_media(msg, file=bytes)
+            except Exception:
+                log.exception("Media yuklab olinmadi")
+        name = getattr(getattr(msg, "file", None), "name", None) or {"video_note": "video.mp4", "voice": "voice.ogg"}.get(kind, "audio.mp3")
+        return {"kind": kind, "data": data, "name": name, "link": f"https://t.me/{self.source_handle}/{msg.id}"}
 
     async def _image_schedule(self, msg):
         """Rasmdagi "Бугун қуйидаги дўконларимиз ишлайди" ro'yxati yoki None."""
@@ -624,6 +661,8 @@ class Pipeline:
         cap = next((m for m in msgs if m.message), msgs[0])
         text, ents = compose(cap.message or "", cap.entities, post, target, d)
         text, ents = finish_text(text, ents, target, self.source_handle)
+        if any(media_kind(m) for m in msgs) and (not cap.message or any(media_kind(m) == "video_note" for m in msgs)):
+            text, ents = "", []  # dumaloq videoga izoh qo'yib bo'lmaydi; izohsiz audio ham o'zidek chiqadi
         replaced = bool(d.override_text) and not target.mirror
         files = [] if replaced else [m for m in msgs if is_file(m)]  # almashtirilgan matn rasmsiz, oddiy xabar
         if not fits(text, bool(files), self.premium):

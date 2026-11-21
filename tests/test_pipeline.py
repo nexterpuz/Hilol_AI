@@ -1295,3 +1295,62 @@ def test_image_schedule_parser():
 
     assert rules.image_schedule("Янги китоб ҳақида\nмуаллиф ва нашр") is None
     assert rules.image_schedule(OCR_SCHEDULE)[0] is True
+
+
+def test_round_video_and_audio_go_to_managers_with_preview(monkeypatch):
+    """Dumaloq video / ovozli xabar: menejerga faylning o'zi va tugmalar; menejersiz filial — admin; to'liq nusxa — darhol."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    async def no_ai(*a, **k):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+
+    def av(i, kind, text=""):
+        m = mk(i, text)
+        m.document, m.media = NS(id=i), f"media-{i}"
+        setattr(m, kind, NS(id=i))
+        m.file = NS(size=1000, name=None)
+        return m
+
+    class AvClient(Client):
+        async def download_media(self, msg, file=None):
+            return b"fayl"
+
+    class AvBot(Bot):
+        async def ask_branch(self, delivery_id, target, text, local=False, attachment=None):
+            self.msgs.append(("branch", delivery_id, target.username, local, attachment and attachment["kind"], attachment and attachment["data"]))
+
+        async def ask(self, delivery_id, target, text, reason, skipped, attachment=None):
+            self.msgs.append(("ask", delivery_id, target.username, attachment and attachment["link"]))
+
+    store, bot = {1901: av(1901, "video_note"), 1902: av(1902, "voice")}, AvBot()
+    c = AvClient(store)
+    res = {}
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([Target(name="AV-M", username="av_m", manager_ids={"7904": "1"}, template_html="Буюртма: +998"),
+                       Target(name="AV-N", username="av_n"),
+                       Target(name="Hilol Nashr (lotin)", username="av_lat", mirror=True, latin=True)])
+            await s.commit()
+        p = Pipeline(c, "manba", bot, premium=True)
+        await p.on_new([store[1901]])
+        await p.on_new([store[1902]])
+        res["before"] = [(t, cap) for t, cap, _ in c.sent if t.startswith("av_")]
+        branch = next(m for m in bot.msgs if m[0] == "branch" and m[2] == "av_m")
+        res["published"] = await p.publish(branch[1])
+
+    asyncio.run(run())
+    assert [t for t, _ in res["before"]] == ["av_lat", "av_lat"]  # filiallarga tasdiqsiz chiqmadi
+    branches = [m for m in bot.msgs if m[0] == "branch"]
+    assert [(m[2], m[3], m[4], m[5]) for m in branches] == [("av_m", "media", "video_note", b"fayl"), ("av_m", "media", "voice", b"fayl")]
+    asks = [m for m in bot.msgs if m[0] == "ask"]
+    assert [m[2] for m in asks] == ["av_n", "av_n"] and asks[0][3].endswith("/1901")  # menejersiz — admindan, havola bilan
+    assert res["published"]
+    t, caption, media = c.sent[-1]
+    assert (t, caption, media) == ("av_m", "", "media-1901")  # dumaloq video izohsiz, aloqa bloki qo'shilmadi

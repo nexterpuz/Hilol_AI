@@ -141,8 +141,10 @@ class AdminBot:
             row.append(Button.inline("Rad etish", data=f"no:{delivery_id}"))
         return row
 
-    async def ask(self, delivery_id: int, target, text: str, reason: str, skipped: bool) -> None:
+    async def ask(self, delivery_id: int, target, text: str, reason: str, skipped: bool, attachment: dict | None = None) -> None:
         head = "Yuborilmadi" if skipped else "Tasdiq kerak"
+        if attachment:
+            text = f"{text}\nBosh kanalda: {attachment['link']}"
         await self.say(
             f"{head} — {target.name}\nSabab: {reason}\n\nKanalda shunday chiqadi:\n\n{preview(text)}",
             self._buttons(delivery_id, skipped),
@@ -158,7 +160,23 @@ class AdminBot:
         )
         await self.say(text, [Button.inline("Yuborish", data=f"sch:ok{post_id}"), Button.inline("Bekor qilish", data=f"sch:no{post_id}")])
 
-    async def ask_branch(self, delivery_id: int, target, text: str, local: bool = False) -> None:
+    async def _send_attachment(self, user_ids, attachment: dict | None) -> None:
+        """Dumaloq video / audio faylining o'zini yuboradi: menejer ko'rib-eshitib qaror qilsin."""
+        if not attachment or not attachment.get("data"):
+            return
+        import io
+
+        for uid in user_ids:
+            try:
+                f = io.BytesIO(attachment["data"])
+                f.name = attachment["name"]
+                await self.bot.send_file(
+                    int(uid), f, video_note=attachment["kind"] == "video_note", voice_note=attachment["kind"] == "voice",
+                )
+            except Exception:
+                log.exception("Media ko'rsatilmadi: %s", uid)
+
+    async def ask_branch(self, delivery_id: int, target, text: str, local: bool = False, attachment: dict | None = None) -> None:
         """Postni filial menejer(lar)iga tasdiqlash uchun yuboradi; menejer bog'lanmagan bo'lsa — bosh adminga."""
         if local == "review":
             intro = "Bu postni avtomatik joylashga ishonch yetmadi (masalan, matnsiz rasm yoki video). Kanalingizga joylansinmi?"
@@ -169,6 +187,13 @@ class AdminBot:
         elif local == "event":
             intro = "Bu post suhbat, tadbir yoki jonli efirga taklif. Filial kanalingizga ham joylansinmi?"
             why = "Tadbir/efir posti"
+        elif local == "media":
+            names = {"video_note": "dumaloq video", "voice": "ovozli xabar", "audio": "audio"}
+            what = names.get((attachment or {}).get("kind"), "dumaloq video yoki audio")
+            intro = f"Bosh kanalga {what} tushdi (yuqorida). Ko'rib chiqing: filial kanalingizga ham joylansinmi?"
+            if attachment:
+                intro += f"\nBosh kanalda: {attachment['link']}"
+            why = "Dumaloq video / audio"
         elif local == "head":
             intro = "Bu post bosh do'kon tadbiri yoki e'loni haqida. Filial kanalingizga ham joylansinmi?"
             why = "Bosh do'kon posti"
@@ -181,6 +206,8 @@ class AdminBot:
         body = f"Yangi post — {target.name}\n{intro}\n\nKanalda shunday chiqadi:\n\n{preview(text)}"
         buttons = [Button.inline("Kanalga joylash", data=f"ok:{delivery_id}"), Button.inline("Rad etish", data=f"no:{delivery_id}")]
         managers = list((target.manager_ids or {}).keys())
+        if managers:
+            await self._send_attachment(managers, attachment)
         if managers and await self.send(managers, body, buttons):
             return  # menejerga yetdi: bosh adminga hech narsa yuborilmaydi
         # Menejer botga bog'lanmagan yoki botni bloklagan: post hech kimga yetmay qolmasligi uchun
