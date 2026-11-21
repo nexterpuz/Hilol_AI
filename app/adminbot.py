@@ -464,6 +464,15 @@ class AdminBot:
         if action == "rep":
             await self._report_choice(event, raw_id)
             return
+        if action == "pend":
+            mine = await self._targets_of(event.sender_id)
+            if not mine:
+                await event.answer("Siz hech bir filialga bog'lanmagansiz", alert=True)
+                return
+            await self._touch(event.sender_id)
+            n = await self._send_pending(event.sender_id, mine)
+            await event.answer(f"{n} ta post yuborildi" if n else "Kutayotgan post yo'q")
+            return
         if action == "sch":
             if event.sender_id not in settings.admin_ids:
                 await event.answer("Ruxsat yo'q", alert=True)

@@ -16,7 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import select
 
-from .db import Session, Setting, Target, log as db_log
+from .db import Delivery, Session, Setting, SourcePost, Target, log as db_log
 
 log = logging.getLogger(__name__)
 TASHKENT = timezone(timedelta(hours=5))
@@ -404,6 +404,93 @@ async def send_ratings(notifier, now_local: datetime | None = None, only_user: i
     return sent
 
 
+# ---------- kutayotgan postlar: shanba eslatmalari ----------
+
+PENDING_REMIND_HOUR, PENDING_SUMMARY_HOUR = 13, 16  # Toshkent vaqti, har shanba
+
+
+def pending_due(now_local: datetime, last_remind: str, last_summary: str) -> list[str]:
+    """Shanba kuni: 13:00 dan keyin menejerlarga eslatma, 16:00 dan keyin adminga umumiy ro'yxat (kuniga bir marta)."""
+    if now_local.weekday() != 5:
+        return []
+    today = now_local.date().isoformat()
+    out = []
+    if now_local.hour >= PENDING_REMIND_HOUR and last_remind != today:
+        out.append("remind")
+    if now_local.hour >= PENDING_SUMMARY_HOUR and last_summary != today:
+        out.append("summary")
+    return out
+
+
+async def pending_counts() -> tuple[list, dict]:
+    """Faol filial kanallari va har birida tasdiq kutayotgan postlar soni (manbada o'chirilganlar sanalmaydi)."""
+    async with Session() as s:
+        targets = list((await s.execute(select(Target).where(Target.active).order_by(Target.id))).scalars())
+        rows = (await s.execute(
+            select(Delivery.target_id).join(SourcePost, SourcePost.id == Delivery.post_id)
+            .where(Delivery.status == "pending", SourcePost.deleted.is_(False))
+        )).scalars()
+        counts: dict = {}
+        for tid in rows:
+            counts[tid] = counts.get(tid, 0) + 1
+    return [t for t in targets if not t.mirror], counts
+
+
+def reminder_text(mine: list, counts: dict) -> str | None:
+    """Menejerga: o'z filial(lar)ida nechta post kutyapti. Kutayotgan post bo'lmasa — None (bezovta qilinmaydi)."""
+    total = sum(counts.get(t.id, 0) for t in mine)
+    if not total:
+        return None
+    lines = [f"📥 Eslatma: kanalingizga joylanishini kutayotgan {total} ta post bor."]
+    if len(mine) > 1:
+        lines += [f"• {t.name}: {counts.get(t.id, 0)} ta" for t in mine if counts.get(t.id)]
+    lines.append("\nKo'rib chiqing: kerakli postni «Kanalga joylash», keraksizini «Rad etish» bilan yoping.")
+    return "\n".join(lines)
+
+
+def summary_text(targets: list, counts: dict) -> str:
+    """Bosh adminga: qaysi filialda nechta post kutib turibdi (ko'pi yuqorida)."""
+    waiting = sorted((t for t in targets if counts.get(t.id)), key=lambda t: (-counts[t.id], t.name))
+    if not waiting:
+        return "📥 Haftalik ko'rinish: hech bir filialda kutayotgan post yo'q. Barcha menejerlar postlarni ko'rib chiqqan."
+    total = sum(counts[t.id] for t in waiting)
+    lines = [f"📥 Haftalik ko'rinish: {len(waiting)} ta filialda jami {total} ta post menejer qarorini kutmoqda.\n"]
+    for t in waiting:
+        note = "" if t.manager_ids else " — menejer botga bog'lanmagan"
+        lines.append(f"• {t.name}: {counts[t.id]} ta{note}")
+    done = len(targets) - len(waiting)
+    if done:
+        lines.append(f"\n✅ Qolgan {done} ta filialda kutayotgan post yo'q.")
+    lines.append("Menejerlarga soat 13:00 da eslatma yuborilgan.")
+    return "\n".join(lines)
+
+
+async def send_pending_reminders(notifier) -> int:
+    from telethon import Button
+
+    targets, counts = await pending_counts()
+    per_user: dict = {}
+    for t in targets:
+        for uid in t.manager_ids or {}:
+            per_user.setdefault(uid, []).append(t)
+    sent = 0
+    for uid, mine in per_user.items():
+        text = reminder_text(mine, counts)
+        if text:
+            sent += await notifier.send([uid], text, [Button.inline("📥 Kutayotgan postlarni ko'rish", data="pend:show")])
+    await db_log("pending_remind", f"{sent} ta menejerga")
+    return sent
+
+
+async def send_pending_summary(notifier) -> int:
+    from .config import settings
+
+    targets, counts = await pending_counts()
+    sent = await notifier.send(settings.admin_ids, summary_text(targets, counts))
+    await db_log("pending_summary", f"{sum(counts.get(t.id, 0) for t in targets)} ta post")
+    return sent
+
+
 async def _get(key: str) -> str:
     async with Session() as s:
         row = await s.get(Setting, key)
@@ -432,6 +519,14 @@ async def run(notifier) -> None:
                 else:
                     await _set("report_monthly_last", now_local.date().isoformat()[:7])
                 await send_reports(notifier, kind, now_local)
+            # shanba: 13:00 — menejerlarga kutayotgan postlar eslatmasi, 16:00 — adminga filiallar bo'yicha ro'yxat
+            for kind in pending_due(now_local, await _get("pending_remind_last"), await _get("pending_summary_last")):
+                if kind == "remind":
+                    await _set("pending_remind_last", now_local.date().isoformat())
+                    await send_pending_reminders(notifier)
+                else:
+                    await _set("pending_summary_last", now_local.date().isoformat())
+                    await send_pending_summary(notifier)
             # kunlik reyting: har kuni 18:00 da faqat menejerlarga
             if now_local.hour >= 18 and await _get("rating_last") != now_local.date().isoformat():
                 await _set("rating_last", now_local.date().isoformat())

@@ -519,3 +519,59 @@ def test_overall_report_groups_by_region():
     cmp_ = {"channels": ch, "avg_reach": 15, "audience": {}, "regions": list(rows.values()), "region_names": REGIONS}
     img = Image.open(io.BytesIO(reports.render_overall(cmp_, "Kunlik hisobot", "x", datetime(2026, 11, 20, 18))))
     assert img.width == 1080 and img.height > 1500
+
+
+def test_pending_saturday_schedule_and_texts():
+    from datetime import datetime
+    from types import SimpleNamespace as T
+
+    from app import reports
+
+    sat = lambda h: datetime(2026, 11, 28, h, 5, tzinfo=reports.TASHKENT)  # noqa: E731 — shanba
+    assert reports.pending_due(sat(12), "", "") == []
+    assert reports.pending_due(sat(13), "", "") == ["remind"]
+    assert reports.pending_due(sat(16), "", "") == ["remind", "summary"]
+    assert reports.pending_due(sat(17), "2026-11-28", "") == ["summary"]
+    assert reports.pending_due(sat(17), "2026-11-28", "2026-11-28") == []
+    assert reports.pending_due(datetime(2026, 11, 27, 16, 0, tzinfo=reports.TASHKENT), "", "") == []  # juma
+
+    q, j, n = T(id=1, name="Qo'qon", manager_ids={"1": "a"}), T(id=2, name="Jizzax", manager_ids={}), T(id=3, name="Nukus", manager_ids={"2": "b"})
+    counts = {1: 3, 2: 5}
+    assert reports.reminder_text([n], counts) is None  # kutayotgan post yo'q — bezovta qilinmaydi
+    assert "3 ta post" in reports.reminder_text([q], counts)
+    assert "Qo'qon: 3 ta" in reports.reminder_text([q, n], {1: 3, 3: 0}) or "3 ta post" in reports.reminder_text([q, n], {1: 3})
+    text = reports.summary_text([q, j, n], counts)
+    assert "2 ta filialda jami 8 ta post" in text
+    assert text.index("Jizzax: 5 ta") < text.index("Qo'qon: 3 ta")  # ko'pi yuqorida
+    assert "Jizzax: 5 ta — menejer botga bog'lanmagan" in text and "Qolgan 1 ta filialda" in text
+    assert "hech bir filialda" in reports.summary_text([q, j], {})
+
+
+def test_pending_counts_skip_deleted_and_mirror():
+    import asyncio
+
+    from sqlalchemy import update
+
+    from app import reports
+    from app.db import Delivery, Session, SourcePost, Target, init_db
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            a, m = Target(name="PC-A", username="pc_a"), Target(name="PC-M", username="pc_m", mirror=True)
+            live, gone = SourcePost(chat_id=1, msg_ids=[9101]), SourcePost(chat_id=1, msg_ids=[9102], deleted=True)
+            s.add_all([a, m, live, gone])
+            await s.flush()
+            s.add_all([Delivery(post_id=live.id, target_id=a.id, status="pending"), Delivery(post_id=gone.id, target_id=a.id, status="pending"),
+                       Delivery(post_id=live.id, target_id=m.id, status="pending"), Delivery(post_id=live.id, target_id=a.id, status="sent")])
+            await s.commit()
+            ids = (a.id, m.id)
+        targets, counts = await reports.pending_counts()
+        async with Session() as s:  # boshqa testlarga ta'sir qilmasin (baza umumiy)
+            await s.execute(update(Target).where(Target.id.in_(ids)).values(active=False))
+            await s.commit()
+        return ids, [t.id for t in targets], counts
+
+    (a, m), tids, counts = asyncio.run(run())
+    assert counts[a] == 1 and a in tids and m not in tids
