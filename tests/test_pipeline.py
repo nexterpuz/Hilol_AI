@@ -1210,9 +1210,9 @@ def test_store_schedule_post_sends_open_or_closed_text(monkeypatch):
     assert set(sent) == {"sc_q", "sc_s", "sc_x", "sc_j", "sc_n", "sc_lat"}
     assert sent["sc_q"][0].startswith("📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!") and sent["sc_q"][0].endswith("@sc_q")
     assert "09:00–17:00" in sent["sc_q"][0]  # Vodiy (Qo'qon) — 17:00 gacha
-    assert "09:00–18:00" in sent["sc_s"][0] and "09:00–18:00" in sent["sc_x"][0]
+    assert "09:00" not in sent["sc_s"][0] and "09:00" not in sent["sc_x"][0]  # umumiy matnda vaqt yo'q
     assert sent["sc_q"][1] is None  # rasm emas, oddiy matnli xabar
-    assert sent["sc_s"][0] == "📚 Bugun yakşanba bölişiga qaramay, dökonimiz oçiq!\n\nSiz azizlar uçun xizmatdamiz.\n\n🕘 Iş vaqtimiz: 09:00–18:00\n\n@sc_s"
+    assert sent["sc_s"][0] == "📚 Bugun yakşanba bölişiga qaramay, dökonimiz oçiq!\n\nSiz azizlar uçun xizmatdamiz.\n\n@sc_s"
     assert "Bugun yakshanba boʻlishiga qaramay, doʻkonimiz ochiq!" in sent["sc_x"][0]
     for closed in ("sc_j", "sc_n"):
         assert sent[closed][0].startswith("📚 Бугун якшанба — дўконимизда дам олиш куни.")
@@ -1283,7 +1283,7 @@ def test_schedule_image_is_read_and_confirmed_by_admin(monkeypatch):
     assert not [m for m in bot.msgs if m[0] in ("ask", "branch")]  # 20 ta alohida so'rov emas, bitta xabar
     assert result["approved"] == 4
     sent = {t: (x, f) for t, x, f in c.sent if t.startswith("oc_")}
-    assert "дўконимиз очиқ" in sent["oc_n"][0] and "09:00–18:00" in sent["oc_n"][0] and sent["oc_n"][1] is None
+    assert "дўконимиз очиқ" in sent["oc_n"][0] and "09:00" not in sent["oc_n"][0] and sent["oc_n"][1] is None
     assert "09:00–17:00" in sent["oc_q"][0]
     assert "dam olish kuni" not in sent["oc_x"][0] and "doʻkonimiz ochiq" in sent["oc_x"][0]
     assert "дам олиш куни" in sent["oc_m"][0]

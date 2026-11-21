@@ -194,9 +194,10 @@ def finish_text(text: str, ents: list | None, target, source_handle: str = SOURC
 
 # Ish tartibi posti ("Бугун қуйидаги дўконларимиз ишлайди: ...") o'rniga filial kanallariga chiqadigan matnlar.
 # Kirillda saqlanadi; lotin yozuvli kanalda o'z alifbosiga o'giriladi. Panelda (Qoidalar) o'zgartiriladi.
-DEFAULT_OPEN_TEXT = "📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!\n\nСиз азизлар учун хизматдамиз.\n\n🕘 Иш вақтимиз: 09:00–18:00"
+# Do'konlarning ish vaqti har xil: umumiy matnda vaqt ko'rsatilmaydi
+DEFAULT_OPEN_TEXT = "📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!\n\nСиз азизлар учун хизматдамиз."
 # Vodiy do'konlari soat 17:00 gacha ishlaydi
-DEFAULT_OPEN_TEXT_VODIY = DEFAULT_OPEN_TEXT.replace("09:00–18:00", "09:00–17:00")
+DEFAULT_OPEN_TEXT_VODIY = DEFAULT_OPEN_TEXT + "\n\n🕘 Иш вақтимиз: 09:00–17:00"
 VODIY_CITIES = ("наманган", "андижон", "фарғона", "қўқон", "марғилон", "асака")
 
 
