@@ -116,6 +116,8 @@ class Delivery(Base):
     # Admin navbatda qo'lda tuzatgan bo'lsa: kesish qatori (-1 = kesilmasin) va yakun turi
     cut_line: Mapped[int | None] = mapped_column(Integer, nullable=True)
     closing: Mapped[str | None] = mapped_column(String(10), nullable=True)  # contact | signature | none
+    # Asl post o'rniga chiqadigan matn (masalan, yakshanba ish tartibi: "do'konimiz ochiq" / "dam olish kuni")
+    override_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -181,7 +183,7 @@ def _migrate(conn) -> None:
 
     wanted = {
         "source_posts": {"media_ids": "JSON", "block_type": "VARCHAR(10)"},
-        "deliveries": {"cut_line": "INTEGER", "closing": "VARCHAR(10)"},
+        "deliveries": {"cut_line": "INTEGER", "closing": "VARCHAR(10)", "override_text": "TEXT"},
         "targets": {
             "signature_html": "TEXT DEFAULT '' NOT NULL", "manager_phones": "TEXT DEFAULT '' NOT NULL",
             "manager_ids": "JSON", "manager_seen": "JSON", "latin": "BOOLEAN DEFAULT FALSE NOT NULL", "latin_style": "VARCHAR(5) DEFAULT 'new' NOT NULL", "mirror": "BOOLEAN DEFAULT FALSE NOT NULL", "branch_approval": "BOOLEAN DEFAULT FALSE NOT NULL",

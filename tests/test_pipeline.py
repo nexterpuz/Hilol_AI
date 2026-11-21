@@ -1147,3 +1147,75 @@ def test_condolence_only_to_mirror_channel(monkeypatch):
     asyncio.run(run())
     assert [x[0] for x in c.sent if x[0].startswith("cd_")] == ["cd_lat"]
     assert not [m for m in bot.msgs if isinstance(m, tuple) and str(m[2]).startswith("cd_")]
+
+
+SUNDAY_POST = """#маълумот
+
+✅ Бугун қуйидаги дўконларимиз ишлайди:
+– Бош дўкон;
+– Хадра;
+– Кўкча;
+– Абу Сахий;
+– Сергели;
+– Самарқанд;
+– Қарши;
+– Бухоро;
+– Наманган;
+– Андижон;
+– Марғилон;
+– Қўқон.
+
+Бошқа дўконларимиз дам олади.
+
+📍 Манзилларимиз
+
+* Навоий, Абу Сахий ва Кўкча дўконларимиз душанба куни дам олади
+
+@hilolnashr"""
+
+
+def test_store_schedule_post_sends_open_or_closed_text(monkeypatch):
+    """Yakshanba ish tartibi: ro'yxatdagi filialga "ochiq", qolganiga "dam olish" matni; kanal yozuvida; edit sinxronlanmaydi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    async def no_ai(*a, **k):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    store, bot = {1701: mk(1701, SUNDAY_POST, photo_id=1701)}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            s.add_all([
+                Target(name="Hilol Nashr | Qo'qon", username="sc_q", keywords="Qo'qon, Қўқон", manager_ids={"7902": "1"}),
+                Target(name="Hilol Nashr | Sergili", username="sc_s", latin=True, latin_style="new", signature_html="@sc_s"),
+                Target(name="Hilol Nashr | Chorsu Xadra", username="sc_x", latin=True, latin_style="old"),
+                Target(name="Hilol Nashr | Jizzax", username="sc_j", keywords="Jizzax"),
+                Target(name="Hilol Nashr | Navoiy", username="sc_n", keywords="Navoiy"),
+                Target(name="Hilol Nashr (lotin)", username="sc_lat", mirror=True, latin=True, signature_html="@hilolnashr_uz"),
+            ])
+            await s.commit()
+        p = Pipeline(c, "manba", bot, premium=True)
+        await p.on_new([store[1701]])
+        store[1701] = mk(1701, SUNDAY_POST.replace("Қўқон.", "Қўқон;\n– Жиззах."), photo_id=1701)
+        await p.on_edit(store[1701])
+
+    asyncio.run(run())
+    sent = {t: (text, f) for t, text, f in c.sent if t.startswith("sc_")}
+    assert set(sent) == {"sc_q", "sc_s", "sc_x", "sc_j", "sc_n", "sc_lat"}
+    assert sent["sc_q"][0].startswith("📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!") and sent["sc_q"][0].endswith("@sc_q")
+    assert sent["sc_q"][1] is None  # rasm emas, oddiy matnli xabar
+    assert sent["sc_s"][0] == "📚 Bugun yakşanba bölişiga qaramay, dökonimiz oçiq!\n\nSiz azizlar uçun xizmatdamiz. ❤️\n\n🕘 Iş vaqtimiz: 09:00–18:00\n\n@sc_s"
+    assert "Bugun yakshanba boʻlishiga qaramay, doʻkonimiz ochiq!" in sent["sc_x"][0]
+    for closed in ("sc_j", "sc_n"):
+        assert sent[closed][0].startswith("📚 Бугун якшанба — дўконимизда дам олиш куни.")
+        assert "мутолаасига" in sent[closed][0]
+    assert "Хадра" not in sent["sc_q"][0]
+    assert "– Xadra;" in sent["sc_lat"][0] and "@hilolnashr_uz" in sent["sc_lat"][0]  # to'liq nusxa — asl post
+    assert not [m for m in bot.msgs if isinstance(m, tuple) and str(m[2]).startswith("sc_")]  # hech kim so'ralmadi
+    assert not [e for e in c.edits if e[0] in ("sc_q", "sc_s", "sc_x", "sc_j", "sc_n")]  # tayyor matn tahrirlanmaydi

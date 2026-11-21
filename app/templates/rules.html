@@ -13,6 +13,17 @@
 </form>
 </section>
 <section class="card">
+<h2>Ish tartibi posti (yakshanba va bayramlar)</h2>
+<div class="muted">Bosh kanalga «Бугун қуйидаги дўконларимиз ишлайди:» va ostida «– Хадра; – Кўкча; ...» ro'yxati bilan post tushsa, filial kanallariga asl post emas, quyidagi matnlardan biri chiqadi: ro'yxatda bor filialga — birinchisi, yo'q filialga — ikkinchisi. «... ишламайди / дам олади:» deb yozilsa — aksincha. Filial nomi kanal nomi va kalit so'zlari bo'yicha topiladi. Matnni kirillda yozing: lotin yozuvli kanallarda o'z alifbosiga avtomatik o'giriladi, oxiriga kanal imzosi qo'shiladi. To'liq nusxa kanaliga asl post chiqadi. Bo'sh qoldirilsa, standart matn ishlatiladi.</div>
+<form method="post" action="/rules/schedule-texts">
+<label for="open_text">Ishlaydigan do'kon kanaliga</label>
+<textarea id="open_text" name="open_text" rows="5">{{ open_text }}</textarea>
+<label for="closed_text">Dam oladigan do'kon kanaliga</label>
+<textarea id="closed_text" name="closed_text" rows="6">{{ closed_text }}</textarea>
+<div class="row"><button class="btn primary" type="submit">Saqlash</button></div>
+</form>
+</section>
+<section class="card">
 <h2>Tasdiq talab qiladigan so'zlar</h2>
 <div class="muted">Post matnida shu so'zlardan biri uchrasa, u avtomatik chiqmaydi — sizdan so'raladi. AI ishlasa ham, ishlamasa ham amal qiladi. So'zlarni vergul bilan ajrating; katta-kichik harf farq qilmaydi.</div>
 <form method="post" action="/rules/ask-words">

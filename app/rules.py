@@ -234,3 +234,64 @@ def analyze(text: str, targets: list) -> Analysis:
         else:
             decisions.append(TargetDecision(target_id=t.id, send=False, confidence=0.6, reason="Post bosh do'konga tegishli", scope="head"))
     return Analysis(block_type=block_type, cta_start_line=start, decisions=decisions)
+
+
+# ---------- "Bugun quyidagi do'konlarimiz ishlaydi:" ro'yxati ----------
+
+_SCHEDULE_HEAD = re.compile(
+    r"(?:қуйидаги|куйидаги|quyidagi)\s+(?:дўкон|дукон|do'kon|dokon|филиал|filial)\w*\s+(?P<verb>ишлайди|ишламайди|дам\s+олади|ishlaydi|ishlamaydi|dam\s+oladi)",
+    re.I,
+)
+_ITEM = re.compile(r"^\s*[-–—•·*]\s*(.+?)\s*[;,.]?\s*$")
+_NOISE_WORDS = {"hilol", "nashr", "filial", "filiali", "kanal", "kanali", "test", "dokon", "dokoni", "bosh", "shahar", "shahri", "tuman", "tumani"}
+
+
+def store_schedule(body: str) -> tuple[bool, list[str]] | None:
+    """Ish tartibi ro'yxati: (ro'yxatdagilar ishlaydimi, do'kon nomlari) yoki None.
+
+    "Бугун қуйидаги дўконларимиз ишлайди: – Хадра; – Кўкча; ..." — ro'yxatdagilar ochiq, qolganlari dam oladi.
+    "... ишламайди / дам олади:" — aksincha. Ro'yxatdan keyingi izohlar ("* Навоий ... душанба куни") olinmaydi.
+    """
+    lines = norm(body).split("\n")
+    for i, line in enumerate(lines):
+        m = _SCHEDULE_HEAD.search(line)
+        if not m:
+            continue
+        items = []
+        for nxt in lines[i + 1:]:
+            if not nxt.strip():
+                if items:
+                    break
+                continue
+            im = _ITEM.match(nxt)
+            if not im or nxt.lstrip().startswith("*"):
+                break
+            items.append(im.group(1).strip(" ;,."))
+        if len(items) >= 2:
+            return m.group("verb").startswith(("ишлайди", "ishlaydi")), items
+    return None
+
+
+def _close(a: str, b: str) -> bool:
+    """Bir xil do'kon nomi: teng, biri ikkinchisining boshi yoki 1 harf farq ("Сергели" ≈ "Sergili")."""
+    if a == b or (min(len(a), len(b)) >= 4 and (a.startswith(b) or b.startswith(a))):
+        return True
+    if min(len(a), len(b)) < 5 or abs(len(a) - len(b)) > 1:
+        return False
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1] <= 1
+
+
+def target_in_list(target, items: list[str]) -> bool:
+    """Filial kanali ro'yxatdagi do'konlardan biriga mosmi (kanal nomi va kalit so'zlari bo'yicha)."""
+    own = {w for w in re.split(r"[^\w]+", _lat(f"{target.name or ''} {target.keywords or ''}")) if len(w) >= 4} - _NOISE_WORDS
+    for item in items:
+        words = {w for w in re.split(r"[^\w]+", _lat(item)) if len(w) >= 4} - _NOISE_WORDS
+        if any(_close(a, b) for a in words for b in own):
+            return True
+    return False

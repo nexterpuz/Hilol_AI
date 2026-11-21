@@ -14,7 +14,7 @@ from telethon.tl.types import MessageMediaWebPage
 from . import ai, rules as fallback
 from .config import settings
 from .db import Decision, Delivery, Rule, Seen, Setting, Session, SourcePost, Target, log as db_log, now
-from .textops import build_post, fits, replace_handle, to_latin, message_to_template, parse_message_link
+from .textops import append_template, build_post, fits, replace_handle, to_latin, message_to_template, parse_message_link
 
 log = logging.getLogger(__name__)
 
@@ -192,10 +192,28 @@ def finish_text(text: str, ents: list | None, target, source_handle: str = SOURC
     return text, ents
 
 
+# Ish tartibi posti ("Бугун қуйидаги дўконларимиз ишлайди: ...") o'rniga filial kanallariga chiqadigan matnlar.
+# Kirillda saqlanadi; lotin yozuvli kanalda o'z alifbosiga o'giriladi. Panelda (Qoidalar) o'zgartiriladi.
+DEFAULT_OPEN_TEXT = "📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!\n\nСиз азизлар учун хизматдамиз. ❤️\n\n🕘 Иш вақтимиз: 09:00–18:00"
+DEFAULT_CLOSED_TEXT = (
+    "📚 Бугун якшанба — дўконимизда дам олиш куни.\n\n"
+    "Шундай экан, дам олиш кунингиз янада мазмунли ўтиши учун камида 30 дақиқангизни китоб мутолаасига бағишланг.\n\n"
+    "Яқинларингиз билан мароқли дам олинг! ❤️"
+)
+
+
+def compose(text: str, ents: list | None, post, target, delivery=None):
+    """Kanal uchun matn (lotinga o'girishdan oldin): almashtiruvchi matn yoki kesilgan post + yakun."""
+    if delivery is not None and getattr(delivery, "override_text", None) and not getattr(target, "mirror", False):
+        closing = "" if delivery.closing == "none" else closing_for(target, "signature")
+        return append_template(delivery.override_text, [], closing)
+    cut, closing = final_parts(post, target, delivery)
+    return build_post(text, ents, cut, closing)
+
+
 def preview_text(post, target, delivery=None) -> str:
     """Post filial kanalida qanday matn bilan chiqishi (formatlashsiz ko'rinish)."""
-    cut, closing = final_parts(post, target, delivery)
-    return finish_text(build_post(post.text or "", None, cut, closing)[0], None, target)[0]
+    return finish_text(compose(post.text or "", None, post, target, delivery)[0], None, target)[0]
 
 
 def text_hash(msg) -> str:
@@ -352,6 +370,10 @@ class Pipeline:
             branch_words = row.value if row is not None else DEFAULT_BRANCH_WORDS
             row = await s.get(Setting, "event_words")
             event_words = row.value if row is not None else DEFAULT_EVENT_WORDS
+            row = await s.get(Setting, "open_text")
+            open_text = row.value if row is not None and row.value.strip() else DEFAULT_OPEN_TEXT
+            row = await s.get(Setting, "closed_text")
+            closed_text = row.value if row is not None and row.value.strip() else DEFAULT_CLOSED_TEXT
             pause_row = await s.get(Setting, "paused")
             paused = bool(pause_row and pause_row.value == "1")
 
@@ -371,6 +393,8 @@ class Pipeline:
         # Filialga xos e'lon ("Қўқондаги дўконимиз ишламайди") qoidalar bilan aniq topiladi va
         # AI qaroridan ustun turadi: bunday post faqat o'sha filialga chiqadi.
         local_rules = fallback.analyze(text, targets) if text and not by_rules else None
+        # "Бугун қуйидаги дўконларимиз ишлайди: – ...": har bir filialga o'z holati haqida tayyor matn
+        schedule = fallback.store_schedule(text) if text else None
 
         async with Session() as s:
             post = SourcePost(
@@ -385,7 +409,7 @@ class Pipeline:
             )
             s.add(post)
             await s.flush()
-            plan = []
+            plan, by_target = [], {}
             for t in targets:
                 d = analysis.for_target(t.id) if analysis else None
                 if local_rules is not None:
@@ -431,6 +455,13 @@ class Pipeline:
                 if skip_word:
                     # Faqat bosh kanal uchun (masalan, vakansiya): filialga chiqmaydi, so'ralmaydi
                     action, reason, quiet, branch, local = "skip", f"Faqat bosh kanal uchun («{skip_word}»)", True, False, False
+                override = None
+                if schedule is not None and not t.mirror:
+                    listed_open, items = schedule
+                    is_open = fallback.target_in_list(t, items) == listed_open
+                    override = open_text if is_open else closed_text
+                    action, quiet, branch, local = ("ask" if t.mode == "manual" else "send"), True, False, False
+                    reason = "Ish tartibi: do'kon ochiq" if is_open else "Ish tartibi: do'kon dam oladi"
                 if t.mirror:
                     # To'liq nusxa kanali: har bir post filtrsiz va so'rovsiz
                     action, reason, quiet, branch, local = "send", "To'liq nusxa kanali", True, False, False
@@ -445,15 +476,16 @@ class Pipeline:
                     post_id=post.id,
                     target_id=t.id,
                     status="skipped" if action == "skip" else "pending",
-                    reason=reason,
+                    reason=reason, override_text=override,
                 )
                 s.add(delivery)
                 await s.flush()
+                by_target[t.id] = delivery
                 plan.append((delivery.id, t, action, reason, quiet, branch, local))
             await s.commit()
             post_id = post.id
             if text:
-                views = {t.id: preview_text(post, t) for t in targets}
+                views = {t.id: preview_text(post, t, by_target.get(t.id)) for t in targets}
             else:
                 kind = "video" if any(m.document for m in msgs) else "rasm" if any(m.photo for m in msgs) else "media"
                 views = {t.id: f"(matnsiz post: {kind}{', ' + str(len(msgs)) + ' ta' if len(msgs) > 1 else ''})" for t in targets}
@@ -526,10 +558,10 @@ class Pipeline:
             await self._fail(delivery_id, target, "Manba post topilmadi")
             return False
         cap = next((m for m in msgs if m.message), msgs[0])
-        cut, closing = final_parts(post, target, d)
-        text, ents = build_post(cap.message or "", cap.entities, cut, closing)
+        text, ents = compose(cap.message or "", cap.entities, post, target, d)
         text, ents = finish_text(text, ents, target, self.source_handle)
-        files = [m for m in msgs if is_file(m)]
+        replaced = bool(d.override_text) and not target.mirror
+        files = [] if replaced else [m for m in msgs if is_file(m)]  # almashtirilgan matn rasmsiz, oddiy xabar
         if not fits(text, bool(files), self.premium):
             await self._fail(delivery_id, target, "Matn Telegram limitidan uzun (Premium kerak yoki qisqartirish)")
             return False
@@ -546,7 +578,7 @@ class Pipeline:
             if not files:
                 sent = await self.client.send_message(
                     target.username, text, formatting_entities=ents,
-                    link_preview=isinstance(cap.media, MessageMediaWebPage), silent=target.silent,
+                    link_preview=isinstance(cap.media, MessageMediaWebPage) and not replaced, silent=target.silent,
                 )
             elif len(files) == 1:
                 sent = await self.client.send_file(
@@ -765,6 +797,8 @@ class Pipeline:
             target = by_id[d.target_id]
             if not target.sync_edits or idx >= len(d.target_msg_ids) or not d.target_msg_ids[idx]:
                 continue
+            if d.override_text and not target.mirror:
+                continue  # kanalda asl post emas, tayyor matn turibdi: manbadagi tahrir unga taalluqli emas
             if is_caption_msg:
                 if target.mirror:
                     text, ents = build_post(msg.message or "", msg.entities, None, "")

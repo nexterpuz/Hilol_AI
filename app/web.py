@@ -812,13 +812,19 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             brow = await s.get(Setting, "branch_words")
             erow = await s.get(Setting, "event_words")
             srow = await s.get(Setting, "skip_words")
-        from .pipeline import DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_EVENT_WORDS, DEFAULT_SKIP_WORDS
+            orow = await s.get(Setting, "open_text")
+            crow = await s.get(Setting, "closed_text")
+        from .pipeline import (
+            DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_CLOSED_TEXT, DEFAULT_EVENT_WORDS, DEFAULT_OPEN_TEXT, DEFAULT_SKIP_WORDS,
+        )
 
         return page(
             request, "rules.html", rules=items, ask_words=row.value if row is not None else DEFAULT_ASK_WORDS,
             branch_words=brow.value if brow is not None else DEFAULT_BRANCH_WORDS,
             event_words=erow.value if erow is not None else DEFAULT_EVENT_WORDS,
             skip_words=srow.value if srow is not None else DEFAULT_SKIP_WORDS,
+            open_text=orow.value if orow is not None and orow.value.strip() else DEFAULT_OPEN_TEXT,
+            closed_text=crow.value if crow is not None and crow.value.strip() else DEFAULT_CLOSED_TEXT,
             saved=request.session.pop("saved", ""),
         )
 
@@ -834,6 +840,20 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                 s.add(Setting(key=key, value=clean))
             await s.commit()
         request.session["saved"] = "So'zlar saqlandi."
+        return _go("/rules")
+
+    @app.post("/rules/schedule-texts")
+    async def schedule_texts_save(request: Request, open_text: str = Form(""), closed_text: str = Form("")):
+        async with Session() as s:
+            for key, value in (("open_text", open_text), ("closed_text", closed_text)):
+                value = value.replace("\r\n", "\n").strip()  # bo'sh qoldirilsa — standart matn
+                row = await s.get(Setting, key)
+                if row is not None:
+                    row.value = value
+                else:
+                    s.add(Setting(key=key, value=value))
+            await s.commit()
+        request.session["saved"] = "Ish tartibi matnlari saqlandi."
         return _go("/rules")
 
     @app.post("/rules")
