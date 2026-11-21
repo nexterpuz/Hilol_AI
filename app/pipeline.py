@@ -48,6 +48,14 @@ CONDOLENCE_WORDS = (
     "таъзия, ta'ziya, taʼziya, ta’ziya, вафоти муносабати, vafoti munosabati, "
     "инна лиллаҳи, иннаа лиллааҳи, inna lillahi, innaa lillaahi"
 )
+# Ishga taklif (vakansiya) e'lonlari: faqat bosh kanal uchun. Panel ro'yxatidan mustaqil, doimiy qoida —
+# e'londa "вакансия" so'zi bo'lmasa ham ("SMM-менежер керак!", "суҳбат давомида келишилади") ushlanadi.
+VACANCY_WORDS = (
+    "вакансия, vakansiya, ойлик маош, oylik maosh, ish haqi, иш ҳақи, резюме, rezyume, ариза қолдир, ariza qoldir, "
+    "ариза топшир, ariza topshir, жамоасига қўшилинг, jamoasiga qo'shiling, жамоамизга қўшилинг, jamoamizga qo'shiling, "
+    "ходим керак, xodim kerak, менежер керак, menejer kerak, мутахассис керак, mutaxassis kerak, иш ўрни, ish o'rni, "
+    "ишга қабул, ishga qabul, ишга таклиф, ishga taklif"
+)
 DEFAULT_ASK_WORDS = ""  # admin o'zi qo'shadi (panel: Qoidalar)
 # Faqat bosh kanal uchun postlar (vakansiya va h.k.): filiallarga chiqmaydi va hech kimdan so'ralmaydi
 DEFAULT_SKIP_WORDS = (
@@ -495,7 +503,7 @@ class Pipeline:
                 elif t.branch_approval and action == "send" and branch_word_in(text, branch_words):
                     # Yangi nashr yoki "tez kunda": kitob filialga kelgach, menejer o'zi tasdiqlaydi
                     action, reason, quiet, branch = "ask", "Filial tasdig'i kutilmoqda", False, True
-                skip_word = ask_word_in(text, skip_words) or ask_word_in(text, CONDOLENCE_WORDS)
+                skip_word = ask_word_in(text, skip_words) or ask_word_in(text, CONDOLENCE_WORDS) or ask_word_in(text, VACANCY_WORDS)
                 if skip_word:
                     # Faqat bosh kanal uchun (masalan, vakansiya): filialga chiqmaydi, so'ralmaydi
                     action, reason, quiet, branch, local = "skip", f"Faqat bosh kanal uchun («{skip_word}»)", True, False, False

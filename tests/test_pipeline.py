@@ -1354,3 +1354,43 @@ def test_round_video_and_audio_go_to_managers_with_preview(monkeypatch):
     assert res["published"]
     t, caption, media = c.sent[-1]
     assert (t, caption, media) == ("av_m", "", "media-1901")  # dumaloq video izohsiz, aloqa bloki qo'shilmadi
+
+
+
+VACANCY_POST = '🟢 «Hilol Nashr» босмахонаси жамоасига SMM-менежер керак!\n\n📚 «Hilol-Nashr» босмахонаси 2011 йилдан буён турли мавзулардаги кўплаб машҳур китобларни чоп этиб келяпти.\n\nВазифалар:\n✅ Reels ва TikTok учун сценарий ёзиш\n✅ Контент-режа тузиш\n✅ Изоҳ ва хабарларга жавоб бериш\n✅ Блогерлар билан ҳамкорлик қилиш ва съёмкаларда қатнашиш\n✅ Видеолар натижасини таҳлил қилиш ва контент сифатини ошириш\n\nТалаблар:\n• SMM ёки контент яратиш соҳасида камида 1 йиллик тажриба\n• Ёзган сценарийларидан намуналар тақдим эта олиш\n• Ўзбек тилида саводли ва жонли ёза олиш\n• Сунъий интеллект (AI) воситаларидан фойдалана олиш\n• Рус ва инглиз тилларини билиш устунлик беради\n\nШароитлар:\n✅ Тажриба ва натижага муносиб ойлик маош\n✅ Олмазор метроси яқинидаги қулай ва шинам офис\n✅ Ҳар куни бепул тушлик\n✅ Тажрибали мутахассислардан ўрганиш ва касбий ривожланиш имконияти\n✅ Янги ғояларни қўллаб-қувватлайдиган аҳил жамоа\n\n❗️ Иш вақтимиз кечки ёки сиртқи таълимда ўқийдиган талабалар учун ҳам мос келади.\n\n💸 Ойлик маош: суҳбат давомида келишилади\n\n👉 Ариза қолдириш учун сўровномани тўлдиринг\n\n«Hilol-Nashr» жамоасига қўшилинг. 😊\n\n@hilolnashr'
+
+
+def test_vacancy_without_keyword_goes_nowhere_and_asks_nobody(monkeypatch):
+    """Haqiqiy e'lon (34053): "вакансия" so'zi yo'q, "суҳбат" bor — filiallarga chiqmaydi, menejerlardan so'ralmaydi."""
+    from sqlalchemy import update
+
+    from app.db import Setting
+    from app.pipeline import Pipeline
+
+    async def no_ai(*a, **k):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    store, bot = {2001: mk(2001, VACANCY_POST, photo_id=2001)}, Bot()
+    c = Client(store)
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            row = await s.get(Setting, "skip_words")
+            if row is None:
+                s.add(Setting(key="skip_words", value="вакансия"))  # admin ro'yxatni qisqartirgan holat ham
+            else:
+                row.value = "вакансия"
+            s.add_all([Target(name="VC-Q", username="vc_q", manager_ids={"7905": "1"}), Target(name="VC-J", username="vc_j"),
+                       Target(name="Hilol Nashr (lotin)", username="vc_lat", mirror=True, latin=True)])
+            await s.commit()
+        await Pipeline(c, "manba", bot, premium=True).on_new([store[2001]])
+        async with Session() as s:
+            await s.delete(await s.get(Setting, "skip_words"))
+            await s.commit()
+
+    asyncio.run(run())
+    assert [t for t, _, _ in c.sent if t.startswith("vc_")] == ["vc_lat"]
+    assert not [m for m in bot.msgs if isinstance(m, tuple) and str(m[2]).startswith("vc_")]

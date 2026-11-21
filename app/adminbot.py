@@ -548,6 +548,13 @@ class AdminBot:
             if target is None or str(event.sender_id) not in (target.manager_ids or {}):
                 await event.answer("Ruxsat yo'q", alert=True)
                 return
+            if d.status != "pending":
+                # Admin qaytarib olgan yoki allaqachon hal qilingan post: eski xabardagi tugma endi ishlamaydi
+                note = {"sent": "Bu post allaqachon joylangan", "deleted": "Bu post o'chirilgan"}.get(d.status, "Bu post bekor qilingan")
+                await event.answer(note, alert=True)
+                msg = await event.get_message()
+                await event.edit(f"{msg.message}\n\n— {note}", buttons=None, parse_mode=None)
+                return
             await self._touch(event.sender_id)
         if action == "ok":
             # Bosh admin qarori eslab qolinadi; menejerniki — yo'q (har bir kitob alohida tasdiqlanadi)
