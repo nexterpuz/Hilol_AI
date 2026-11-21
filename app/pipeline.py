@@ -194,11 +194,11 @@ def finish_text(text: str, ents: list | None, target, source_handle: str = SOURC
 
 # Ish tartibi posti ("Бугун қуйидаги дўконларимиз ишлайди: ...") o'rniga filial kanallariga chiqadigan matnlar.
 # Kirillda saqlanadi; lotin yozuvli kanalda o'z alifbosiga o'giriladi. Panelda (Qoidalar) o'zgartiriladi.
-DEFAULT_OPEN_TEXT = "📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!\n\nСиз азизлар учун хизматдамиз. ❤️\n\n🕘 Иш вақтимиз: 09:00–18:00"
+DEFAULT_OPEN_TEXT = "📚 Бугун якшанба бўлишига қарамай, дўконимиз очиқ!\n\nСиз азизлар учун хизматдамиз.\n\n🕘 Иш вақтимиз: 09:00–18:00"
 DEFAULT_CLOSED_TEXT = (
     "📚 Бугун якшанба — дўконимизда дам олиш куни.\n\n"
     "Шундай экан, дам олиш кунингиз янада мазмунли ўтиши учун камида 30 дақиқангизни китоб мутолаасига бағишланг.\n\n"
-    "Яқинларингиз билан мароқли дам олинг! ❤️"
+    "Яқинларингиз билан мароқли дам олинг!"
 )
 
 
