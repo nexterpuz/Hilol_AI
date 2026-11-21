@@ -42,6 +42,13 @@ STORE_WORDS = (
     "ишламай", "ёпиқ", "очилди", "очилиш", "иш вақти", "иш тартиби", "кўчди",
     "ishlamay", "yopiq", "ochildi", "ochilish", "ish vaqti", "ish tartibi", "ko'chdi",
 )
+# Shaharda o'tadigan tadbir: "Бухородаги ... китоб сайли ўтказилади" — shu shahar filialiga tegishli
+EVENT_PLACE_WORDS = (
+    "сайл", "ярмарка", "кўргазма", "кургазма", "тадбир", "учрашув", "ўтказилади", "бўлиб ўтади", "кутиб қоламиз",
+    "sayl", "yarmarka", "ko'rgazma", "korgazma", "tadbir", "uchrashuv", "o'tkaziladi", "bo'lib o'tadi", "kutib qolamiz",
+)
+_LOCATIVE = r"(?:даги|деги|да|га|dagi|da|ga)(?![^\W\d_])"
+_RESIDENTS = r"(?:лик|lik)\s+(?:китобхон|мухлис|kitobxon|muxlis)"
 HEAD_STORE = ("бош дўкон", "бош дукон", "bosh do'kon", "bosh do‘kon", "bosh dokon")
 
 
@@ -112,6 +119,12 @@ def local_groups(body: str) -> tuple[set[int], bool]:
             head = True
         if any(w in line for w in STORE_WORDS):
             groups |= {i for i, names in enumerate(CITY_GROUPS) if any(n in line for n in names)}
+        event = any(w in line for w in EVENT_PLACE_WORDS)
+        for i, names in enumerate(CITY_GROUPS):
+            for n in names:
+                # Kitob tavsifidagi oddiy "Бухоро" emas: faqat "Бухородаги/Бухорода ... сайл" yoki "Бухоролик китобхонлар"
+                if (event and re.search(re.escape(n) + _LOCATIVE, line)) or re.search(re.escape(n) + _RESIDENTS, line):
+                    groups.add(i)
     return groups, head
 
 

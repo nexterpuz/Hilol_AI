@@ -259,3 +259,17 @@ def test_store_name_routes_only_to_that_store():
     # Chorsu kanali hali qo'shilmagan: hech qayerga chiqmaydi va hech kim so'ralmaydi
     got = {d.target_id: (d.send, d.scope) for d in analyze(post, [qoqon]).decisions}
     assert got == {1: (False, "other")}
+
+
+def test_city_event_goes_only_to_that_city():
+    from types import SimpleNamespace as T
+
+    from app.rules import analyze
+
+    post = ("📣 24-ноябрь куни Бухородаги Мир Араб олий мадрасасида китоб сайли ўтказилади\n\n"
+            "Бухоролик китобхонларимизни китоб сайлида кутиб қоламиз! 😊\n \n📍 Манзил\n\n@hilolnashr")
+    tg = [T(id=1, name="Hilol Nashr | Buxoro", keywords="Buxoro, Бухоро"), T(id=2, name="Hilol Nashr | Qo'qon", keywords="Qo'qon")]
+    assert {d.target_id: (d.send, d.scope) for d in analyze(post, tg).decisions} == {1: (True, "own"), 2: (False, "other")}
+    # kitob tavsifidagi shahar nomi postni mahalliy qilmaydi
+    book = "Бухорода туғилган алломанинг ҳаёти ҳақида янги китоб"
+    assert {d.scope for d in analyze(book, tg).decisions} == {"general"}
