@@ -273,3 +273,22 @@ def test_city_event_goes_only_to_that_city():
     # kitob tavsifidagi shahar nomi postni mahalliy qilmaydi
     book = "Бухорода туғилган алломанинг ҳаёти ҳақида янги китоб"
     assert {d.scope for d in analyze(book, tg).decisions} == {"general"}
+
+
+def test_store_list_matches_channel_names_without_keywords():
+    """Haqiqiy kanal nomlari (kalit so'zlarsiz): "Кўкча, Абу Саҳий ва Хадрадаги" → uchta kanal; "Чорсу" faqat Chorsu."""
+    from types import SimpleNamespace as T
+
+    from app.rules import analyze
+
+    names = ["Qo'qon", "Abu Saxiy", "Chorsu Xadra", "Ko'kcha", "Chorsu", "Yunusobod"]
+    tg = [T(id=i, name="Hilol Nashr | " + n, keywords="") for i, n in enumerate(names)]
+
+    def to(text):
+        return sorted(names[d.target_id] for d in analyze(text, tg).decisions if d.send)
+
+    assert to("✨ Бугун Кўкча, Абу Саҳий ва Хадрадаги дўконимиз ишламайди\n\n⏺ Бошқа дўконларимиз одатдаги тартибда ишлайди.") == [
+        "Abu Saxiy", "Chorsu Xadra", "Ko'kcha"]
+    assert to("✨ Бугун ва эртага Чорсудаги дўконимиз ишламайди") == ["Chorsu"]
+    assert to("Хадрадаги дўконимиз ёпиқ") == ["Chorsu Xadra"]
+    assert len(to("Сиз, азизлар учун дўконимиз очиқ")) == len(names)  # oddiy jumla — umumiy post

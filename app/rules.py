@@ -71,6 +71,7 @@ _STORE_STOP = {
     "бошқа", "barcha", "барча", "ушбу", "шу", "бизнинг", "янги", "бош", "асосий", "ҳамма", "қолган", "ҳар", "бир", "бу", "ўша",
     "boshqa", "ushbu", "bizning", "yangi", "bosh", "asosiy", "hamma", "qolgan", "har", "bu", "o'sha", "нашриётнинг", "нашриётининг",
     "hilol", "nashr", "ҳилол", "нашр", "китоб", "kitob", "онлайн", "onlayn", "бугун", "эртага", "bugun", "ertaga", "ва", "va",
+    "учун", "uchun", "сиз", "siz", "биз", "biz", "ҳозир", "hozir", "кеча", "kecha",
 }
 
 
@@ -85,6 +86,7 @@ def store_names(body: str) -> set[str]:
     """Postda tilga olingan do'kon nomlari (lotin, kichik harf). Sifatdoshlar ("ишлайдиган") va umumiy so'zlar olinmaydi."""
     names = set()
     for line in norm(body).split("\n"):
+        before = len(names)
         found = [m.group(1) for m in _DAGI.finditer(line)]
         for m in _BEFORE.finditer(line):
             found += [g for g in m.groups() if g]
@@ -95,16 +97,40 @@ def store_names(body: str) -> set[str]:
                 continue
             words = [w for w in words if w not in _STORE_STOP]
             names.add(re.sub(r"(dagi|degi)$", "", _lat(" ".join(words[-2:]))))
+        if len(names) > before and "," in line:  # qatorda haqiqiy do'kon nomi topilgan bo'lsagina
+            # "Кўкча, Абу Саҳий ва Хадрадаги дўконимиз": vergul bilan sanalgan oldingi nomlar ham
+            m = re.search(r"\s" + _STORE_NOUN, line)
+            for item in re.split(r",|\s(?:ва|va)\s", line[:m.start()] if m else ""):
+                words = [w for w in re.findall(r"[^\W\d_][\w'ʻ]*", item) if w not in _STORE_STOP]
+                if 1 <= len(words) <= 2 and all(len(w) >= 3 for w in words):
+                    names.add(re.sub(r"(dagi|degi)$", "", _lat(" ".join(words))))
     return names
 
 
+def _sig_words(target) -> set[str]:
+    return {w for w in re.split(r"[^\w]+", _lat(f"{getattr(target, 'name', '') or ''}")) if len(w) >= 4} - _NOISE_WORDS
+
+
+def store_targets(targets: list, names: set[str]) -> set:
+    """Har bir do'kon nomi uchun mos kanal(lar). Bir nom bir nechta kanalga mos kelsa ("Чорсу" → Chorsu va Chorsu Xadra),
+    nomi aynan shu so'zlardan iborat kanal tanlanadi (Chorsu)."""
+    out = set()
+    for n in names:
+        hits = [t for t in targets if target_matches_store(t, {n})]
+        words = {w for w in n.split() if len(w) >= 4}
+        exact = [t for t in hits if _sig_words(t) and all(any(_close(a, b) for b in words) for a in _sig_words(t))]
+        out |= {t.id for t in (exact if len(hits) > 1 and exact else hits)}
+    return out
+
+
 def target_matches_store(target, names: set[str]) -> bool:
+    """Postdagi do'kon nomi shu kanalnikimi: kanal nomi va kalit so'zlari bo'yicha, 1 harf farqi bilan ("Саҳий" ≈ "Saxiy")."""
     keys = [_lat(k.strip()) for k in f"{getattr(target, 'keywords', '') or ''}".split(",") if k.strip()]
     for n in names:
         for k in keys:
             if len(k) >= 4 and len(n) >= 4 and (n == k or n.startswith(k) or k.startswith(n) or k in n.split()):
                 return True
-    return False
+    return bool(names) and target_in_list(target, list(names))
 
 
 def local_groups(body: str) -> tuple[set[int], bool]:
@@ -220,7 +246,8 @@ def analyze(text: str, targets: list) -> Analysis:
     stores = store_names(body)
     known_city = {_lat(n) for i in cities for n in CITY_GROUPS[i]}
     stores -= {s for s in stores if any(s.startswith(c) for c in known_city if len(c) >= 4)}  # shahar nomlari alohida hisoblanadi
-    named = {t.id for t in targets if mentioned(t) or (cities & target_groups(t)) or target_matches_store(t, stores)}
+    by_store = store_targets(targets, stores)
+    named = {t.id for t in targets if mentioned(t) or (cities & target_groups(t)) or t.id in by_store}
     is_local = bool(named or cities or head or stores)
     decisions = []
     for t in targets:
@@ -312,7 +339,7 @@ def _close(a: str, b: str) -> bool:
 
 def target_in_list(target, items: list[str]) -> bool:
     """Filial kanali ro'yxatdagi do'konlardan biriga mosmi (kanal nomi va kalit so'zlari bo'yicha)."""
-    own = {w for w in re.split(r"[^\w]+", _lat(f"{target.name or ''} {target.keywords or ''}")) if len(w) >= 4} - _NOISE_WORDS
+    own = {w for w in re.split(r"[^\w]+", _lat(f"{getattr(target, 'name', '') or ''} {getattr(target, 'keywords', '') or ''}")) if len(w) >= 4} - _NOISE_WORDS
     for item in items:
         words = {w for w in re.split(r"[^\w]+", _lat(item)) if len(w) >= 4} - _NOISE_WORDS
         if any(_close(a, b) for a in words for b in own):

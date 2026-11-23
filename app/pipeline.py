@@ -99,6 +99,16 @@ async def reset_stuck() -> None:
             update(Delivery).where(Delivery.status == "sending")
             .values(status="failed", reason="Yuborish paytida jarayon uzildi — kanalni tekshirib, kerak bo'lsa qayta yuboring")
         )
+        # Matni ham, fayli ham yo'q "postlar" (oldin post deb olingan jonli efir xabarlari va h.k.):
+        # ularni hech qayerga yuborib bo'lmaydi — kutayotgan so'rovlar bekor qilinadi
+        rows = (await s.execute(
+            select(Delivery, SourcePost).join(SourcePost, SourcePost.id == Delivery.post_id)
+            .where(Delivery.status.in_(("pending", "failed", "skipped")), SourcePost.text == "")
+        )).all()
+        for d, post in rows:
+            media = post.media_ids or {}
+            if media and not any(media.values()):
+                d.status, d.reason = "rejected", "Tizim xabari (jonli efir va h.k.): ko'chiriladigan post emas"
         await s.commit()
 
 
@@ -385,6 +395,10 @@ class Pipeline:
         return sorted(full, key=lambda m: m.id) if len(full) >= len(msgs) else msgs
 
     async def on_new(self, msgs: list) -> None:
+        # Tizim xabarlari ("Live stream started", xabar qadaldi, kanal rasmi o'zgardi): ko'chiriladigan post emas
+        msgs = [m for m in msgs if not getattr(m, "action", None)]
+        if not msgs:
+            return
         msgs = sorted(await self._full_album(msgs), key=lambda m: m.id)
         ids = [m.id for m in msgs]
         cap = next((m for m in msgs if m.message), msgs[0])

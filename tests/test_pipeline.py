@@ -1394,3 +1394,48 @@ def test_vacancy_without_keyword_goes_nowhere_and_asks_nobody(monkeypatch):
     asyncio.run(run())
     assert [t for t, _, _ in c.sent if t.startswith("vc_")] == ["vc_lat"]
     assert not [m for m in bot.msgs if isinstance(m, tuple) and str(m[2]).startswith("vc_")]
+
+
+def test_service_messages_are_ignored_and_old_ones_cleaned(monkeypatch):
+    """"Live stream started/finished" — tizim xabari: hech qayerga yuborilmaydi va so'ralmaydi; oldingilari tozalanadi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline, reset_stuck
+
+    async def no_ai(*a, **k):
+        return None
+
+    monkeypatch.setattr(ai, "analyze", no_ai)
+    live = mk(2101, "")
+    live.action = NS(kind="group_call")
+    store, bot = {2101: live}, Bot()
+    c = Client(store)
+    res = {}
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            q = Target(name="SV-Q", username="sv_q", manager_ids={"7906": "1"})
+            lat = Target(name="Hilol Nashr (lotin)", username="sv_lat", mirror=True, latin=True)
+            s.add_all([q, lat])
+            # oldingi versiya post deb saqlagan tizim xabari va oddiy matnsiz rasm
+            old_live = SourcePost(chat_id=CHAT, msg_ids=[2102], text="", media_ids={"2102": None})
+            photo = SourcePost(chat_id=CHAT, msg_ids=[2103], text="", media_ids={"2103": 55})
+            s.add_all([old_live, photo])
+            await s.flush()
+            d1 = Delivery(post_id=old_live.id, target_id=q.id, status="pending")
+            d2 = Delivery(post_id=old_live.id, target_id=lat.id, status="failed")
+            d3 = Delivery(post_id=photo.id, target_id=q.id, status="pending")
+            s.add_all([d1, d2, d3])
+            await s.commit()
+            ids = (d1.id, d2.id, d3.id)
+        await Pipeline(c, "manba", bot, premium=True).on_new([live])
+        await reset_stuck()
+        async with Session() as s:
+            res["st"] = [(await s.get(Delivery, i)).status for i in ids]
+            res["posts"] = len(list((await s.execute(select(SourcePost).where(SourcePost.chat_id == CHAT, SourcePost.msg_ids == [2101]))).scalars()))
+
+    asyncio.run(run())
+    assert not [t for t, _, _ in c.sent if t.startswith("sv_")] and not bot.msgs
+    assert res["st"] == ["rejected", "rejected", "pending"]  # matnsiz rasm tegilmaydi
