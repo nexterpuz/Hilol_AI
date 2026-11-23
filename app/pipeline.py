@@ -687,6 +687,13 @@ class Pipeline:
             text, ents = "", []  # dumaloq videoga izoh qo'yib bo'lmaydi; izohsiz audio ham o'zidek chiqadi
         replaced = bool(d.override_text) and not target.mirror
         files = [] if replaced else [m for m in msgs if is_file(m)]  # almashtirilgan matn rasmsiz, oddiy xabar
+        if not files and not (cap.message or replaced) or any(getattr(m, "action", None) for m in msgs):
+            # Na matn, na fayl (tizim xabari va h.k.): kanalga faqat aloqa bloki chiqib qolmasin
+            async with Session() as s:
+                row = await s.get(Delivery, delivery_id)
+                row.status, row.reason = "rejected", "Bo'sh post: matn ham, fayl ham yo'q"
+                await s.commit()
+            return False
         if not fits(text, bool(files), self.premium):
             await self._fail(delivery_id, target, "Matn Telegram limitidan uzun (Premium kerak yoki qisqartirish)")
             return False
@@ -862,6 +869,24 @@ class Pipeline:
                 d.status, d.reason = "rejected", "Admin qaytarib oldi"
             await s.commit()
         await db_log("recalled", f"post={post_id} removed_from={removed}")
+        return removed
+
+    async def cleanup_empty_posts(self) -> int:
+        """Oldin post deb olingan tizim xabarlari (jonli efir boshlandi/tugadi): kanallarga chiqib ketgan
+        bo'sh nusxalar (faqat aloqa bloki) o'chiriladi, kutayotganlari bekor qilinadi. Qaytaradi: nechta kanaldan."""
+        async with Session() as s:
+            posts = list((await s.execute(select(SourcePost).where(SourcePost.text == "", SourcePost.deleted.is_(False)))).scalars())
+        empty = [p.id for p in posts if p.media_ids and not any(p.media_ids.values())]
+        removed = 0
+        for post_id in empty:
+            removed += await self.recall(post_id)
+        if removed:
+            await db_log("cleanup_empty", f"posts={empty} removed_from={removed}")
+            if self.notifier:
+                await self.notifier.say(
+                    f"Jonli efir tizim xabarlari tufayli filial kanallariga chiqib qolgan {removed} ta bo'sh xabar "
+                    "(faqat aloqa bloki) o'chirildi."
+                )
         return removed
 
     async def adjust(self, delivery_id: int, cut_line: int, closing: str) -> None:

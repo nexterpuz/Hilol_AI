@@ -185,6 +185,10 @@ class Agent:
 
     async def _catch_up(self, pipeline: Pipeline) -> None:
         try:
+            await pipeline.cleanup_empty_posts()
+        except Exception:
+            log.exception("Bo'sh postlarni tozalab bo'lmadi")
+        try:
             n = await pipeline.catch_up()
             if n and self.notifier:
                 await self.notifier.say(f"Agent o'chiq turgan paytda bosh kanalga {n} ta post tushgan ekan — ular hozir qayta ishlandi.")

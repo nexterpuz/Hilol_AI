@@ -1439,3 +1439,39 @@ def test_service_messages_are_ignored_and_old_ones_cleaned(monkeypatch):
     asyncio.run(run())
     assert not [t for t, _, _ in c.sent if t.startswith("sv_")] and not bot.msgs
     assert res["st"] == ["rejected", "rejected", "pending"]  # matnsiz rasm tegilmaydi
+
+
+def test_empty_posts_already_sent_are_recalled_and_never_sent_again(monkeypatch):
+    """Jonli efir xabaridan Andijon kanaliga faqat aloqa bloki chiqib qolgan: ishga tushganda o'chiriladi; qayta yuborilmaydi."""
+    from sqlalchemy import update
+
+    from app.pipeline import Pipeline
+
+    store = {2201: mk(2201, "")}
+    c, bot = Client(store), Bot()
+    res = {}
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            t = Target(name="EM-A", username="em_a", mode="auto", template_html="Буюртма: +998")
+            s.add(t)
+            live = SourcePost(chat_id=CHAT, msg_ids=[2201], text="", media_ids={"2201": None})
+            s.add(live)
+            await s.flush()
+            sent = Delivery(post_id=live.id, target_id=t.id, status="sent", target_msg_ids=[777])
+            s.add(sent)
+            await s.commit()
+            sid = sent.id
+        p = Pipeline(c, "manba", bot, premium=True)
+        res["removed"] = await p.cleanup_empty_posts()
+        res["again"] = await p.cleanup_empty_posts()
+        res["publish"] = await p.resend(live.id, t.id)  # qo'lda qayta yuborish ham bo'sh postni chiqarmaydi
+        async with Session() as s:
+            res["st"] = (await s.get(Delivery, sid)).status
+
+    asyncio.run(run())
+    assert ("em_a", [777]) in c.deleted and res["removed"] == 1 and res["again"] == 0
+    assert res["publish"] is False and not [x for x in c.sent if x[0] == "em_a"] and res["st"] == "rejected"
+    assert any("bo'sh xabar" in m for m in bot.msgs if isinstance(m, str))
