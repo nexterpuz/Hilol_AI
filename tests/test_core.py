@@ -292,3 +292,13 @@ def test_store_list_matches_channel_names_without_keywords():
     assert to("✨ Бугун ва эртага Чорсудаги дўконимиз ишламайди") == ["Chorsu"]
     assert to("Хадрадаги дўконимиз ёпиқ") == ["Chorsu Xadra"]
     assert len(to("Сиз, азизлар учун дўконимиз очиқ")) == len(names)  # oddiy jumla — umumiy post
+
+
+def test_short_event_started_post_goes_only_to_that_city():
+    from types import SimpleNamespace as T
+
+    from app.rules import analyze
+
+    tg = [T(id=1, name="Hilol Nashr | Buxoro", keywords=""), T(id=2, name="Hilol Nashr | Jizzax", keywords="")]
+    post = "📣 Бухорода «Китобхонлик мактаби» лойиҳасининг 4-сони бошланди\n\n@hilolnashr"
+    assert {d.target_id: d.send for d in analyze(post, tg).decisions} == {1: True, 2: False}

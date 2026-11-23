@@ -46,6 +46,9 @@ STORE_WORDS = (
 EVENT_PLACE_WORDS = (
     "сайл", "ярмарка", "кўргазма", "кургазма", "тадбир", "учрашув", "ўтказилади", "бўлиб ўтади", "кутиб қоламиз",
     "sayl", "yarmarka", "ko'rgazma", "korgazma", "tadbir", "uchrashuv", "o'tkaziladi", "bo'lib o'tadi", "kutib qolamiz",
+    # tadbir boshlangani/davom etayotgani haqidagi qisqa xabarlar: "Бухорода «Китобхонлик мактаби» лойиҳаси бошланди"
+    "бошланди", "бошланмоқда", "давом этмоқда", "ўтмоқда", "ўтказилмоқда", "лойиҳа",
+    "boshlandi", "boshlanmoqda", "davom etmoqda", "o'tmoqda", "o'tkazilmoqda", "loyiha",
 )
 _LOCATIVE = r"(?:даги|деги|да|га|dagi|da|ga)(?![^\W\d_])"
 _RESIDENTS = r"(?:лик|lik)\s+(?:китобхон|мухлис|kitobxon|muxlis)"
