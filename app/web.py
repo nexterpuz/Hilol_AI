@@ -823,6 +823,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             crow = await s.get(Setting, "closed_text")
             vrow = await s.get(Setting, "open_text_vodiy")
             ocrow = await s.get(Setting, "ocr_confirm")
+            grow = await s.get(Setting, "approve_gap_hours")
         from .pipeline import (
             DEFAULT_ASK_WORDS, DEFAULT_BRANCH_WORDS, DEFAULT_CLOSED_TEXT, DEFAULT_EVENT_WORDS, DEFAULT_OPEN_TEXT, DEFAULT_OPEN_TEXT_VODIY,
             DEFAULT_SKIP_WORDS,
@@ -836,6 +837,7 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
             open_text=orow.value if orow is not None and orow.value.strip() else DEFAULT_OPEN_TEXT,
             open_text_vodiy=vrow.value if vrow is not None and vrow.value.strip() else DEFAULT_OPEN_TEXT_VODIY,
             ocr_confirm=not (ocrow is not None and ocrow.value == "0"),
+            approve_gap=grow.value if grow is not None and grow.value.strip() else "2",
             closed_text=crow.value if crow is not None and crow.value.strip() else DEFAULT_CLOSED_TEXT,
             saved=request.session.pop("saved", ""),
         )
@@ -852,6 +854,24 @@ def create_app(agent=None, on_shutdown=None) -> FastAPI:
                 s.add(Setting(key=key, value=clean))
             await s.commit()
         request.session["saved"] = "So'zlar saqlandi."
+        return _go("/rules")
+
+    @app.post("/rules/approve-gap")
+    async def approve_gap_save(request: Request, hours: str = Form("2")):
+        try:
+            value = max(0.0, min(24.0, float(hours.replace(",", "."))))
+        except ValueError:
+            request.session["saved"] = "Soat noto'g'ri kiritildi: masalan 2 yoki 1.5 yozing."
+            return _go("/rules")
+        text = f"{value:g}"
+        async with Session() as s:
+            row = await s.get(Setting, "approve_gap_hours")
+            if row is not None:
+                row.value = text
+            else:
+                s.add(Setting(key="approve_gap_hours", value=text))
+            await s.commit()
+        request.session["saved"] = f"Oraliq saqlandi: {text} soat." if value else "Oraliq o'chirildi: tasdiqlangan postlar darhol chiqadi."
         return _go("/rules")
 
     @app.post("/rules/schedule-texts")

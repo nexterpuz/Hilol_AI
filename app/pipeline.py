@@ -1,14 +1,17 @@
 """Asosiy oqim: yangi post -> tahlil -> joylash; tahrir va o'chirishni sinxronlash."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from telethon import TelegramClient
+from telethon.tl import functions
 from telethon.tl.types import MessageMediaWebPage
 
 from . import ai, ocr, rules as fallback
@@ -271,6 +274,27 @@ def is_file(msg) -> bool:
     if isinstance(msg.media, MessageMediaWebPage):
         return False
     return bool(msg.photo or msg.document)
+
+
+# ---------- menejer tasdiqlagan postlar orasidagi vaqt ----------
+
+DEFAULT_GAP_HOURS = 2.0  # panelda o'zgartiriladi (Qoidalar); 0 — darhol chiqadi
+QUIET_FROM, QUIET_TO = 22, 8  # Toshkent vaqti: shu oraliqda rejalashtirilgan post ertalabga suriladi
+TASHKENT = timezone(timedelta(hours=5))
+
+
+def aware(dt: datetime | None) -> datetime | None:
+    return dt if dt is None or dt.tzinfo else dt.replace(tzinfo=timezone.utc)  # SQLite vaqtni zonasiz qaytaradi
+
+
+def daytime(t: datetime) -> datetime:
+    """Tunda (22:00–08:00) chiqadigan vaqtni ertalab 08:00 ga suradi."""
+    local = aware(t).astimezone(TASHKENT)
+    if local.hour >= QUIET_FROM:
+        local = (local + timedelta(days=1)).replace(hour=QUIET_TO, minute=0, second=0, microsecond=0)
+    elif local.hour < QUIET_TO:
+        local = local.replace(hour=QUIET_TO, minute=0, second=0, microsecond=0)
+    return local.astimezone(timezone.utc)
 
 
 def media_kind(msg) -> str | None:
@@ -647,7 +671,7 @@ class Pipeline:
         if self.notifier:
             await self.notifier.say(f"Xatolik — {target.name}: {reason}")
 
-    async def publish(self, delivery_id: int) -> bool:
+    async def publish(self, delivery_id: int, schedule_at: datetime | None = None) -> bool:
         d, post, target = await self._load(delivery_id)
         if d.status == "sent" or post.deleted:
             return False
@@ -700,7 +724,7 @@ class Pipeline:
         # Yuborishni "band qilamiz": ikki marta bosilgan tugma yoki parallel chaqiruv ikkinchi nusxa chiqarmaydi
         async with Session() as s:
             claimed = await s.execute(
-                update(Delivery).where(Delivery.id == delivery_id, Delivery.status.notin_(("sent", "sending", "deleted")))
+                update(Delivery).where(Delivery.id == delivery_id, Delivery.status.notin_(("sent", "sending", "deleted", "scheduled")))
                 .values(status="sending")
             )
             await s.commit()
@@ -711,18 +735,19 @@ class Pipeline:
                 sent = await self.client.send_message(
                     target.username, text, formatting_entities=ents,
                     link_preview=isinstance(cap.media, MessageMediaWebPage) and not replaced, silent=target.silent,
+                    schedule=schedule_at,
                 )
             elif len(files) == 1:
                 sent = await self.client.send_file(
                     target.username, files[0].media, caption=text,
-                    formatting_entities=ents, silent=target.silent,
+                    formatting_entities=ents, silent=target.silent, schedule=schedule_at,
                 )
             else:
                 sent = await self.client.send_file(
                     target.username, [m.media for m in files],
                     caption=[text if m.id == cap.id else "" for m in files],
                     formatting_entities=[ents if m.id == cap.id else [] for m in files],
-                    silent=target.silent,
+                    silent=target.silent, schedule=schedule_at,
                 )
         except Exception as e:  # Telegram xatolari turli xil: hammasini adminga yetkazamiz
             log.exception("publish")
@@ -732,8 +757,13 @@ class Pipeline:
         by_source = {m.id: sm.id for m, sm in zip(files or [cap], sent_list)}
         async with Session() as s:
             d = await s.get(Delivery, delivery_id)
-            d.status, d.sent_at = "sent", now()
-            d.target_msg_ids = [by_source.get(i) for i in post.msg_ids]
+            if schedule_at is not None:
+                # Kanalning "Отправить позже" bo'limida: chiqqach resolve_scheduled() haqiqiy xabar id larini yozadi
+                d.status, d.scheduled_at, d.target_msg_ids = "scheduled", schedule_at, []
+                d.scheduled = {"ids": [by_source.get(i) for i in post.msg_ids], "text": (text or "")[:120]}
+            else:
+                d.status, d.sent_at = "sent", now()
+                d.target_msg_ids = [by_source.get(i) for i in post.msg_ids]
             # Shu post shu kanal uchun kutib turgan boshqa so'rovlar endi kerak emas
             await s.execute(
                 update(Delivery).where(
@@ -742,8 +772,146 @@ class Pipeline:
                 ).values(status="rejected", reason="Post bu kanalga allaqachon yuborilgan")
             )
             await s.commit()
+        if schedule_at is not None:
+            await db_log("scheduled", f"delivery={delivery_id} target={target.username} at={schedule_at.isoformat()}")
+            return True
         await db_log("sent", f"delivery={delivery_id} target={target.username}")
+        await self.reschedule(target)  # kanalga yangi post chiqdi: navbatdagilar undan keyinga suriladi
         return True
+
+    # ---------- menejer tasdiqlagan postlarni oraliq bilan rejalashtirish ----------
+
+    async def gap(self) -> timedelta:
+        async with Session() as s:
+            row = await s.get(Setting, "approve_gap_hours")
+        try:
+            hours = float(row.value) if row is not None and row.value.strip() else DEFAULT_GAP_HOURS
+        except ValueError:
+            hours = DEFAULT_GAP_HOURS
+        return timedelta(hours=max(0.0, hours))
+
+    async def _scheduled_list(self, target) -> list:
+        """Kanalning "Отправить позже" bo'limidagi xabarlar (Telegram'dan)."""
+        try:
+            peer = await self.client.get_input_entity(target.username)
+            res = await self.client(functions.messages.GetScheduledHistoryRequest(peer=peer, hash=0))
+            return list(getattr(res, "messages", []) or [])
+        except Exception:
+            log.exception("Rejadagi xabarlarni olib bo'lmadi")
+            return []
+
+    async def _last_post_time(self, target) -> datetime | None:
+        """Kanaldagi eng oxirgi post (chiqqan yoki rejada turgan) vaqti."""
+        times = []
+        try:
+            last = await self.client.get_messages(target.username, limit=1)
+            if last and last[0] is not None and getattr(last[0], "date", None):
+                times.append(aware(last[0].date))
+        except Exception:
+            log.exception("Kanaldagi oxirgi postni olib bo'lmadi")
+        times += [aware(m.date) for m in await self._scheduled_list(target) if getattr(m, "date", None)]
+        return max(times) if times else None
+
+    async def approve_spaced(self, delivery_id: int) -> tuple[bool, datetime | None]:
+        """Menejer tasdig'i: kanaldagi oxirgi postdan kamida `gap` o'tib chiqadi (kerak bo'lsa "Отправить позже" ga).
+        Qaytaradi: (muvaffaqiyat, rejalashtirilgan vaqt yoki None — darhol chiqdi)."""
+        d, post, target = await self._load(delivery_id)
+        locks = self.__dict__.setdefault("_gap_locks", {})
+        async with locks.setdefault(target.id, asyncio.Lock()):  # ketma-ket bosilgan tugmalar bir-birini kutadi
+            gap = await self.gap()
+            if gap.total_seconds() <= 0:
+                return await self.publish(delivery_id), None
+            last = await self._last_post_time(target)
+            t = now()
+            when = daytime(max(t, last + gap) if last else t)
+            if when <= t + timedelta(minutes=1):
+                return await self.publish(delivery_id), None
+            ok = await self.publish(delivery_id, schedule_at=when)
+            return ok, (when if ok else None)
+
+    async def reschedule(self, target) -> int:
+        """Kanalga yangi post chiqqanda: rejada turgan postlar undan va bir-biridan kamida `gap` keyinga suriladi."""
+        async with Session() as s:
+            rows = list((await s.execute(
+                select(Delivery).where(Delivery.target_id == target.id, Delivery.status == "scheduled").order_by(Delivery.scheduled_at)
+            )).scalars())
+        if not rows:
+            return 0
+        gap = await self.gap()
+        prev, moved = now(), 0
+        try:
+            peer = await self.client.get_input_entity(target.username)
+        except Exception:
+            log.exception("reschedule")
+            return 0
+        for d in rows:
+            cur = aware(d.scheduled_at) or prev
+            want = daytime(max(cur, prev + gap))
+            if want > cur + timedelta(seconds=30):
+                try:
+                    for sid in [i for i in (d.scheduled or {}).get("ids", []) if i]:
+                        await self.client(functions.messages.EditMessageRequest(peer=peer, id=sid, schedule_date=want))
+                except Exception:
+                    log.exception("Rejadagi post vaqtini o'zgartirib bo'lmadi")
+                    prev = cur
+                    continue
+                async with Session() as s:
+                    row = await s.get(Delivery, d.id)
+                    row.scheduled_at = want
+                    await s.commit()
+                moved += 1
+                cur = want
+            prev = cur
+        if moved:
+            await db_log("rescheduled", f"target={target.username} {moved} ta post suriladi")
+        return moved
+
+    async def resolve_scheduled(self) -> int:
+        """Vaqti kelib chiqqan rejadagi postlar: kanaldagi haqiqiy xabar id lari yoziladi (tahrir/o'chirish va statistika uchun)."""
+        async with Session() as s:
+            rows = list((await s.execute(
+                select(Delivery).where(Delivery.status == "scheduled", Delivery.scheduled_at <= now() - timedelta(minutes=1))
+            )).scalars())
+            targets = {t.id: t for t in (await s.execute(select(Target))).scalars()}
+        done = 0
+        for d in rows:
+            target = targets.get(d.target_id)
+            if target is None:
+                continue
+            info = d.scheduled or {}
+            sids = [i for i in info.get("ids", []) if i]
+            waiting = {m.id: aware(m.date) for m in await self._scheduled_list(target)}
+            still = [i for i in sids if i in waiting]
+            if still:
+                if waiting[still[0]] != aware(d.scheduled_at):  # menejer vaqtni Telegram'da o'zi o'zgartirgan
+                    async with Session() as s:
+                        row = await s.get(Delivery, d.id)
+                        row.scheduled_at = waiting[still[0]]
+                        await s.commit()
+                continue
+            recent = [m for m in (await self.client.get_messages(target.username, limit=40)) if m is not None]
+            text = (info.get("text") or "")[:60]
+            at = aware(d.scheduled_at)
+            cap = next((m for m in recent if text and (m.message or "").startswith(text)), None)
+            if cap is None and not text:
+                near = [m for m in recent if getattr(m, "date", None) and abs((aware(m.date) - at).total_seconds()) < 600]
+                cap = min(near, key=lambda m: abs((aware(m.date) - at).total_seconds()), default=None)
+            async with Session() as s:
+                row = await s.get(Delivery, d.id)
+                if cap is None:
+                    row.status, row.reason = "rejected", "Rejadan olib tashlangan: kanalda chiqmadi"
+                else:
+                    group = sorted(
+                        (m for m in recent if cap.grouped_id and m.grouped_id == cap.grouped_id), key=lambda m: m.id
+                    ) or [cap]
+                    mapping = dict(zip(sorted(sids), [m.id for m in group]))
+                    row.target_msg_ids = [mapping.get(i) for i in info.get("ids", [])]
+                    row.status, row.sent_at = "sent", aware(cap.date)
+                    done += 1
+                await s.commit()
+        if done:
+            await db_log("scheduled_sent", f"{done} ta rejadagi post chiqdi")
+        return done
 
     async def _remember(self, delivery_id: int, send: bool) -> None:
         """Admin qarorini eslab qoladi: o'xshash post kelganda shu qaror qo'llanadi."""
@@ -863,6 +1031,12 @@ class Pipeline:
                     continue
                 d.status, d.reason, d.target_msg_ids = "deleted", "Admin qaytarib oldi", [None] * len(d.target_msg_ids)
                 removed += 1
+            for d in (await s.execute(select(Delivery).where(Delivery.post_id == post_id, Delivery.status == "scheduled"))).scalars():
+                target = targets.get(d.target_id)
+                if target is not None:
+                    await self._unschedule(target, d)
+                d.status, d.reason = "deleted", "Admin qaytarib oldi"
+                removed += 1
             # kutayotgan nusxalar ham bekor qilinadi
             waiting = (await s.execute(select(Delivery).where(Delivery.post_id == post_id, Delivery.status.in_(("pending", "skipped"))))).scalars()
             for d in waiting:
@@ -870,6 +1044,17 @@ class Pipeline:
             await s.commit()
         await db_log("recalled", f"post={post_id} removed_from={removed}")
         return removed
+
+    async def _unschedule(self, target, d) -> None:
+        """Rejadagi ("Отправить позже") nusxani Telegram'dan o'chiradi."""
+        ids = [i for i in (d.scheduled or {}).get("ids", []) if i]
+        if not ids:
+            return
+        try:
+            peer = await self.client.get_input_entity(target.username)
+            await self.client(functions.messages.DeleteScheduledMessagesRequest(peer=peer, id=ids))
+        except Exception:
+            log.exception("Rejadagi postni o'chirib bo'lmadi")
 
     async def cleanup_empty_posts(self) -> int:
         """Oldin post deb olingan tizim xabarlari (jonli efir boshlandi/tugadi): kanallarga chiqib ketgan
@@ -1010,6 +1195,10 @@ class Pipeline:
                     target = targets[d.target_id]
                     if d.status == "pending":
                         d.status, d.reason = "rejected", "Manba post o'chirilgan"
+                        continue
+                    if d.status == "scheduled":
+                        await self._unschedule(target, d)
+                        d.status, d.reason = "deleted", "Manba post o'chirilgan"
                         continue
                     if d.status != "sent" or not target.sync_deletes:
                         continue

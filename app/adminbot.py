@@ -558,8 +558,18 @@ class AdminBot:
             await self._touch(event.sender_id)
         if action == "ok":
             # Bosh admin qarori eslab qolinadi; menejerniki — yo'q (har bir kitob alohida tasdiqlanadi)
-            done = await (self.pipeline.approve(delivery_id) if is_admin else self.pipeline.publish(delivery_id))
-            note = "Kanalga joylandi" if done else "Joylanmadi (allaqachon joylangan yoki xato)"
+            if is_admin:
+                done, when = await self.pipeline.approve(delivery_id), None
+            else:
+                # Menejer: kanaldagi oxirgi postdan kamida 2 soat (panelda sozlanadi) o'tib chiqadi
+                done, when = await self.pipeline.approve_spaced(delivery_id)
+            if done and when is not None:
+                from .pipeline import TASHKENT
+
+                local = when.astimezone(TASHKENT)
+                note = f"Rejalashtirildi: {local:%d.%m} soat {local:%H:%M} da chiqadi (kanalning «Отправить позже» bo'limida)"
+            else:
+                note = "Kanalga joylandi" if done else "Joylanmadi (allaqachon joylangan yoki xato)"
         else:
             await self.pipeline.reject(delivery_id, remember=is_admin)
             note = "Rad etildi"

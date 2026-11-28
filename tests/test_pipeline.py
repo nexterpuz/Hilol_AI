@@ -469,6 +469,10 @@ def test_bot_manager_binding_and_permissions():
             self.calls.append(("approve", i))
             return True
 
+        async def approve_spaced(self, i):  # menejer tasdig'i (oraliq bilan)
+            self.calls.append(("publish", i))
+            return True, None
+
         async def reject(self, i, remember=True):
             self.calls.append(("reject", i, remember))
 
@@ -1475,3 +1479,108 @@ def test_empty_posts_already_sent_are_recalled_and_never_sent_again(monkeypatch)
     assert ("em_a", [777]) in c.deleted and res["removed"] == 1 and res["again"] == 0
     assert res["publish"] is False and not [x for x in c.sent if x[0] == "em_a"] and res["st"] == "rejected"
     assert any("bo'sh xabar" in m for m in bot.msgs if isinstance(m, str))
+
+
+def test_manager_approvals_are_spaced_rescheduled_and_resolved(monkeypatch):
+    """Menejer 5 ta postni ketma-ket tasdiqlaydi: har biri oldingisidan 2 soat keyin, tunda emas; kanalga yangi post
+    chiqsa navbat suriladi; vaqti kelganda chiqqan post haqiqiy id bilan belgilanadi; qaytarib olinsa rejadan o'chadi."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import update
+    from telethon.tl import functions
+
+    from app import pipeline as pl
+
+    TZ = pl.TASHKENT
+    clock = {"t": datetime(2026, 12, 5, 12, 0, tzinfo=TZ).astimezone(timezone.utc)}
+    monkeypatch.setattr(pl, "now", lambda: clock["t"])
+    local = lambda h, m=0, day=5: datetime(2026, 12, day, h, m, tzinfo=TZ).astimezone(timezone.utc)  # noqa: E731
+
+    class SpClient(Client):
+        def __init__(self, store):
+            super().__init__(store)
+            self.posted = [NS(id=40, message="eski post", date=local(11, 30), grouped_id=None)]
+            self.sched, self.calls, self.sid = {}, [], 900
+
+        async def get_input_entity(self, name):
+            return name
+
+        async def get_messages(self, src, ids=None, limit=None, min_id=0):
+            if src == "sp_a":
+                return sorted(self.posted, key=lambda m: -m.id)[: limit or 100]
+            return await super().get_messages(src, ids=ids, limit=limit, min_id=min_id)
+
+        async def send_message(self, target, text, schedule=None, **k):
+            if schedule is None:
+                return await super().send_message(target, text, **k)
+            self.sid += 1
+            self.sched[self.sid] = NS(id=self.sid, message=text, date=schedule, grouped_id=None)
+            return NS(id=self.sid)
+
+        async def __call__(self, req):
+            self.calls.append(type(req).__name__)
+            if isinstance(req, functions.messages.GetScheduledHistoryRequest):
+                return NS(messages=list(self.sched.values()))
+            if isinstance(req, functions.messages.EditMessageRequest):
+                self.sched[req.id].date = req.schedule_date
+            if isinstance(req, functions.messages.DeleteScheduledMessagesRequest):
+                for i in req.id:
+                    self.sched.pop(i, None)
+            return NS()
+
+    texts = [f"Китоб {i} ҳақида\nНархи {i}0 000" for i in range(5)]
+    store = {2300 + i: mk(2300 + i, texts[i]) for i in range(5)}
+    store[2399] = mk(2399, "Янги умумий пост")
+    c = SpClient(store)
+    res = {}
+
+    async def run():
+        await init_db()
+        async with Session() as s:
+            await s.execute(update(Target).values(active=False))
+            t = Target(name="SP-A", username="sp_a", manager_ids={"7907": "1"})
+            s.add(t)
+            await s.flush()
+            dids = []
+            for i in list(range(5)) + [99]:
+                post = SourcePost(chat_id=CHAT, msg_ids=[2300 + i], text=store[2300 + i].message, media_ids={str(2300 + i): None})
+                s.add(post)
+                await s.flush()
+                d = Delivery(post_id=post.id, target_id=t.id, status="pending", reason="Filial tasdig'i kutilmoqda")
+                s.add(d)
+                await s.flush()
+                dids.append(d.id)
+            await s.commit()
+        p = pl.Pipeline(c, "manba", None, premium=True)
+        res["when"] = [(await p.approve_spaced(i))[1] for i in dids[:5]]
+        # bosh kanaldan yangi post shu kanalga darhol chiqdi (soat 12:00): navbat undan 2 soat keyinga suriladi
+        assert await p.publish(dids[5])
+        c.posted.append(NS(id=41, message="Янги умумий пост", date=clock["t"], grouped_id=None))
+        async with Session() as s:
+            rows = [await s.get(Delivery, i) for i in dids[:5]]
+            res["after"] = [pl.aware(r.scheduled_at) for r in rows]
+            res["status"] = [r.status for r in rows]
+            first_sid = rows[0].scheduled["ids"][0]
+        # vaqt keldi: Telegram birinchi rejadagi postni chiqardi (yangi id bilan)
+        clock["t"] = local(14, 5)
+        sent = c.sched.pop(first_sid)
+        c.posted.append(NS(id=55, message=sent.message, date=sent.date, grouped_id=None))
+        res["resolved"] = await p.resolve_scheduled()
+        async with Session() as s:
+            r0 = await s.get(Delivery, dids[0])
+            res["r0"] = (r0.status, r0.target_msg_ids)
+        # ikkinchi postni admin qaytarib oldi: rejadan o'chadi
+        async with Session() as s:
+            post2 = (await s.get(Delivery, dids[1])).post_id
+        await p.recall(post2)
+        async with Session() as s:
+            res["r1"] = (await s.get(Delivery, dids[1])).status
+
+    asyncio.run(run())
+    assert res["when"] == [local(13, 30), local(15, 30), local(17, 30), local(19, 30), local(21, 30)]
+    assert res["status"] == ["scheduled"] * 5
+    # 12:00 dagi yangi postdan keyin: 14, 16, 18, 20; beshinchisi 22:00 ga tushadi — tun, ertalab 08:00 ga o'tadi
+    assert res["after"][:4] == [local(14, 0), local(16, 0), local(18, 0), local(20, 0)] and res["after"][4] == local(8, 0, day=6)
+    assert "EditMessageRequest" in c.calls
+    assert res["resolved"] == 1 and res["r0"] == ("sent", [55])
+    assert res["r1"] == "deleted" and "DeleteScheduledMessagesRequest" in c.calls

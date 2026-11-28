@@ -216,6 +216,7 @@ class Agent:
             await asyncio.sleep(60)
             try:
                 await pipeline.catch_up()
+                await pipeline.resolve_scheduled()  # vaqti kelib chiqqan "Отправить позже" postlari
             except asyncio.CancelledError:
                 raise
             except Exception:
