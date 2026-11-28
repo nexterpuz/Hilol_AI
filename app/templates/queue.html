@@ -46,7 +46,7 @@
 {% if branch %}
 <details>
 <summary style="cursor:pointer;min-height:44px;display:flex;align-items:center;gap:8px"><strong>Filial menejerlari tasdig'ini kutayotgan postlar ({{ branch|length }})</strong></summary>
-<div class="muted" style="margin-bottom:12px">Bu postlar sizdan tasdiq talab qilmaydi: har birini o'z filiali menejeri botda «Kanalga joylash» orqali chiqaradi. Zarur bo'lsa, shu yerdan o'zingiz ham yuborishingiz mumkin.</div>
+<div class="muted" style="margin-bottom:12px">Bu postlar sizdan tasdiq talab qilmaydi: har birini o'z filiali menejeri botda «Hozir joylash» yoki «Navbat bilan joylash» orqali chiqaradi. Zarur bo'lsa, shu yerdan o'zingiz ham yuborishingiz mumkin.</div>
 <div style="display:flex;flex-direction:column;gap:20px">
 {% for i in branch %}{{ card(i) }}{% endfor %}
 </div>

@@ -32,6 +32,14 @@ ALIASES = {
 }
 
 
+def manager_buttons(delivery_id: int) -> list:
+    """Menejer uchun: darhol, navbat bilan (oxirgi postdan 2 soat keyin, «Отправить позже» orqali) yoki rad etish."""
+    return [
+        [Button.inline("⚡ Hozir joylash", data=f"ok:{delivery_id}"), Button.inline("🕑 Navbat bilan joylash", data=f"q:{delivery_id}")],
+        [Button.inline("Rad etish", data=f"no:{delivery_id}")],
+    ]
+
+
 def keyboard(is_admin: bool, is_manager: bool, paused: bool = False):
     """Foydalanuvchi roliga mos pastki tugmalar."""
     rows = [[Button.text(BTN_REPORT, resize=True)]]
@@ -202,10 +210,10 @@ class AdminBot:
             intro = "Bu post aynan sizning filialingizga tegishli. Kanalingizga joylansinmi?"
             why = "Filialga tegishli post"
         else:
-            intro = "Kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosing."
+            intro = "Kitob filialingizda sotuvga tayyor bo'lgach «Hozir joylash» yoki «Navbat bilan joylash» ni bosing."
             why = "Filial tasdig'i kutilmoqda"
         body = f"Yangi post — {target.name}\n{intro}\n\nKanalda shunday chiqadi:\n\n{preview(text)}"
-        buttons = [Button.inline("Kanalga joylash", data=f"ok:{delivery_id}"), Button.inline("Rad etish", data=f"no:{delivery_id}")]
+        buttons = manager_buttons(delivery_id)
         managers = list((target.manager_ids or {}).keys())
         if managers:
             await self._send_attachment(managers, attachment)
@@ -338,7 +346,7 @@ class AdminBot:
                 continue
             shown = preview_text(post, by_id[d.target_id], d) or "(matnsiz post)"
             body = f"Kutmoqda — {names[d.target_id]}\n\nKanalda shunday chiqadi:\n\n{preview(shown)}"
-            await self.send([user_id], body, [Button.inline("Kanalga joylash", data=f"ok:{d.id}"), Button.inline("Rad etish", data=f"no:{d.id}")])
+            await self.send([user_id], body, manager_buttons(d.id))
         return len(items)
 
     async def _bind(self, event) -> None:
@@ -360,7 +368,7 @@ class AdminBot:
         names = ", ".join(t.name for t in bound)
         await event.respond(
             f"Tasdiqlandi. Siz bog'langan filial: {names}.\n"
-            "Endi yangi nashr va «tez kunda» postlari sizga keladi: kitob filialingizda sotuvga tayyor bo'lgach «Kanalga joylash» ni bosasiz.\n"
+            "Endi yangi nashr va «tez kunda» postlari sizga keladi: kitob filialingizda sotuvga tayyor bo'lgach «Hozir joylash» yoki «Navbat bilan joylash» ni bosasiz.\n"
             "Har kuni soat 18:00 da filialingiz reytingi, har yakshanba va oy oxirida hisoboti keladi.\n"
             "Pastdagi tugmalar orqali hisobotni va kutayotgan postlarni istagan payt ko'rasiz.",
             buttons=keyboard(event.sender_id in settings.admin_ids, True, await is_paused()),
@@ -556,13 +564,15 @@ class AdminBot:
                 await event.edit(f"{msg.message}\n\n— {note}", buttons=None, parse_mode=None)
                 return
             await self._touch(event.sender_id)
-        if action == "ok":
-            # Bosh admin qarori eslab qolinadi; menejerniki — yo'q (har bir kitob alohida tasdiqlanadi)
-            if is_admin:
+        if action in ("ok", "q"):
+            if action == "q":
+                # Navbat bilan: kanaldagi oxirgi postdan kamida 2 soat (panelda sozlanadi) o'tib, «Отправить позже» orqali
+                done, when = await self.pipeline.approve_spaced(delivery_id)
+            elif is_admin:
+                # Bosh admin qarori eslab qolinadi; menejerniki — yo'q (har bir kitob alohida tasdiqlanadi)
                 done, when = await self.pipeline.approve(delivery_id), None
             else:
-                # Menejer: kanaldagi oxirgi postdan kamida 2 soat (panelda sozlanadi) o'tib chiqadi
-                done, when = await self.pipeline.approve_spaced(delivery_id)
+                done, when = await self.pipeline.publish(delivery_id), None  # hozir joylash
             if done and when is not None:
                 from .pipeline import TASHKENT
 
@@ -570,9 +580,11 @@ class AdminBot:
                 note = f"Rejalashtirildi: {local:%d.%m} soat {local:%H:%M} da chiqadi (kanalning «Отправить позже» bo'limida)"
             else:
                 note = "Kanalga joylandi" if done else "Joylanmadi (allaqachon joylangan yoki xato)"
-        else:
+        elif action == "no":
             await self.pipeline.reject(delivery_id, remember=is_admin)
             note = "Rad etildi"
+        else:
+            return
         await event.answer(note)
         msg = await event.get_message()
         await event.edit(f"{msg.message}\n\n— {note}", buttons=None, parse_mode=None)

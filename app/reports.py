@@ -444,7 +444,7 @@ def reminder_text(mine: list, counts: dict) -> str | None:
     lines = [f"📥 Eslatma: kanalingizga joylanishini kutayotgan {total} ta post bor."]
     if len(mine) > 1:
         lines += [f"• {t.name}: {counts.get(t.id, 0)} ta" for t in mine if counts.get(t.id)]
-    lines.append("\nKo'rib chiqing: kerakli postni «Kanalga joylash», keraksizini «Rad etish» bilan yoping.")
+    lines.append("\nKo'rib chiqing: kerakli postni «Hozir joylash» yoki «Navbat bilan joylash» (oxirgi postdan 2 soat keyin), keraksizini «Rad etish» bilan yoping.")
     return "\n".join(lines)
 
 

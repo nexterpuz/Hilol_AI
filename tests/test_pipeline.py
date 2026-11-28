@@ -469,8 +469,8 @@ def test_bot_manager_binding_and_permissions():
             self.calls.append(("approve", i))
             return True
 
-        async def approve_spaced(self, i):  # menejer tasdig'i (oraliq bilan)
-            self.calls.append(("publish", i))
+        async def approve_spaced(self, i):  # menejer: «Navbat bilan joylash»
+            self.calls.append(("spaced", i))
             return True, None
 
         async def reject(self, i, remember=True):
@@ -513,6 +513,7 @@ def test_bot_manager_binding_and_permissions():
         # o'z filiali postini joylaydi (xotirasiz), begona filialnikini — yo'q
         ok = Ev(502, data=f"ok:{ids[1]}".encode())
         await bot._on_click(ok)
+        await bot._on_click(Ev(502, data=f"q:{ids[1]}".encode()))  # navbat bilan joylash
         foreign = Ev(502, data=f"ok:{ids[2]}".encode())
         await bot._on_click(foreign)
         admin = Ev(777, data=f"no:{ids[2]}".encode())
@@ -522,7 +523,7 @@ def test_bot_manager_binding_and_permissions():
     e1, e2, e3, bound, calls, foreign, sent, ids = asyncio.run(run())
     assert "o'z raqamingizni" in e1[0] and "biriktirilmagan" in e2[0] and "Bog' A" in e3[0]
     assert bound == {"502": "901112233"}
-    assert calls == [("publish", ids[1]), ("reject", ids[2], True)]
+    assert calls == [("publish", ids[1]), ("spaced", ids[1]), ("reject", ids[2], True)]
     assert foreign == ["Ruxsat yo'q"]
     assert any(u == [502] and "Kutmoqda" in t for u, t in sent)  # bog'langach kutayotgan post yuborildi
 

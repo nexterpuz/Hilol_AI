@@ -40,7 +40,7 @@
 </section>
 <section class="card">
 <h2>Suhbat, tadbir va jonli efir so'zlari</h2>
-<div class="muted">Matnida shu so'zlardan biri bo'lgan post har bir filial menejeriga botdan yuboriladi: menejer «Kanalga joylash» ni bossa, o'z kanaliga chiqadi. Menejeri botga bog'lanmagan filial uchun sizdan so'raladi.</div>
+<div class="muted">Matnida shu so'zlardan biri bo'lgan post har bir filial menejeriga botdan yuboriladi: menejer «Hozir joylash» yoki «Navbat bilan joylash» ni bossa, o'z kanaliga chiqadi. Menejeri botga bog'lanmagan filial uchun sizdan so'raladi.</div>
 <form method="post" action="/rules/ask-words">
 <input type="hidden" name="kind" value="event_words">
 <label for="ewords">So'zlar</label>
@@ -50,7 +50,7 @@
 </section>
 <section class="card">
 <h2>Menejer tasdiqlagan postlar orasidagi vaqt</h2>
-<div class="muted">Menejer bir nechta kutayotgan postni birdan tasdiqlasa, ular kanalga birdaniga chiqmaydi: har biri kanaldagi oxirgi postdan kamida shuncha soat keyin chiqadi va kanalning «Отправить позже» bo'limida kutib turadi. Bosh kanaldan kanalga yangi post tushsa, navbatdagilar undan keyinga suriladi. 22:00–08:00 oralig'iga to'g'ri kelgan post ertalab 08:00 da chiqadi. 0 yozilsa — darhol chiqadi.</div>
+<div class="muted">Menejer botda «🕑 Navbat bilan joylash» ni bossa, post kanalga darhol chiqmaydi: u kanaldagi oxirgi postdan kamida shuncha soat keyin chiqadi va kanalning «Отправить позже» bo'limida kutib turadi. Bosh kanaldan kanalga yangi post tushsa, navbatdagilar undan keyinga suriladi. 22:00–08:00 oralig'iga to'g'ri kelgan post ertalab 08:00 da chiqadi. «⚡ Hozir joylash» bosilsa — darhol chiqadi. 0 yozilsa — navbat ham darhol chiqadi.</div>
 <form method="post" action="/rules/approve-gap">
 <label for="gap">Oraliq, soat</label>
 <div class="row"><input id="gap" name="hours" type="number" min="0" max="24" step="0.5" value="{{ approve_gap }}" style="flex:0 1 140px">
@@ -59,7 +59,7 @@
 </section>
 <section class="card">
 <h2>Filial tasdig'ini talab qiladigan so'zlar</h2>
-<div class="muted">Yangi nashr yoki «tez kunda sotuvda» kabi postlar: kitob hali filialga yetib kelmagan bo'lishi mumkin. Matnida shu so'zlardan biri bo'lgan post filial menejeriga botdan yuboriladi va u «Kanalga joylash» ni bosgach chiqadi. Faqat sozlamasida «filial tasdig'i» yoqilgan kanallarga taalluqli; oddiy sotuv postlari kutmasdan chiqadi.</div>
+<div class="muted">Yangi nashr yoki «tez kunda sotuvda» kabi postlar: kitob hali filialga yetib kelmagan bo'lishi mumkin. Matnida shu so'zlardan biri bo'lgan post filial menejeriga botdan yuboriladi va u tasdiqlagach chiqadi. Faqat sozlamasida «filial tasdig'i» yoqilgan kanallarga taalluqli; oddiy sotuv postlari kutmasdan chiqadi.</div>
 <form method="post" action="/rules/ask-words">
 <input type="hidden" name="kind" value="branch_words">
 <label for="bwords">So'zlar</label>
